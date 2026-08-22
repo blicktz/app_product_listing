@@ -1,57 +1,59 @@
-import { useRef } from 'react';
-import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View } from 'react-native';
-import { CameraView, useCameraPermissions } from 'expo-camera';
-import * as MediaLibrary from 'expo-media-library';
+import { useCallback, useState } from 'react';
+import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { useFocusEffect, useRouter } from 'expo-router';
 
-export default function CameraScreen() {
-  const [permission, requestPermission] = useCameraPermissions();
-  const [mediaPermission, requestMediaPermission] = MediaLibrary.usePermissions();
-  const cameraRef = useRef<CameraView>(null);
+function formatDateRoot(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
 
-  if (!permission) {
-    return (
-      <View style={styles.centered}>
-        <ActivityIndicator size="large" />
-      </View>
-    );
-  }
+export default function HomeScreen() {
+  const router = useRouter();
+  const [dateRoot] = useState(() => formatDateRoot(new Date()));
+  const [sku, setSku] = useState('');
 
-  if (!permission.granted) {
-    return (
-      <View style={styles.centered}>
-        <Text style={styles.message}>We need your permission to use the camera</Text>
-        <Pressable style={styles.grantButton} onPress={requestPermission}>
-          <Text style={styles.grantButtonText}>Grant Permission</Text>
-        </Pressable>
-      </View>
-    );
-  }
+  useFocusEffect(
+    useCallback(() => {
+      setSku('');
+    }, [])
+  );
 
-  const handleCapture = async () => {
-    const photo = await cameraRef.current?.takePictureAsync();
-    if (!photo) {
-      return;
-    }
+  const canStartCapture = sku.trim().length > 0;
 
-    let permissionToSave = mediaPermission;
-    if (!permissionToSave?.granted) {
-      permissionToSave = await requestMediaPermission();
-    }
-
-    if (!permissionToSave.granted) {
-      Alert.alert('Captured', `${photo.uri}\n\n(Photos permission denied — not saved to library)`);
-      return;
-    }
-
-    await MediaLibrary.saveToLibraryAsync(photo.uri);
-    Alert.alert('Saved to Photos', photo.uri);
+  const handleStartCapture = () => {
+    router.push({
+      pathname: '/camera',
+      params: { sku: sku.trim(), dateRoot },
+    });
   };
 
   return (
     <View style={styles.container}>
-      <CameraView ref={cameraRef} style={StyleSheet.absoluteFill} facing="back" />
-      <View style={styles.controls}>
-        <Pressable style={styles.shutterButton} onPress={handleCapture} />
+      <View style={styles.sessionInfo}>
+        <Text style={styles.sessionLabel}>Session folder</Text>
+        <Text style={styles.sessionValue}>{dateRoot}/</Text>
+      </View>
+
+      <View style={styles.form}>
+        <Text style={styles.inputLabel}>SKU</Text>
+        <TextInput
+          style={styles.input}
+          value={sku}
+          onChangeText={setSku}
+          placeholder="Enter SKU"
+          autoCapitalize="characters"
+          autoCorrect={false}
+        />
+
+        <Pressable
+          style={[styles.startButton, !canStartCapture && styles.startButtonDisabled]}
+          onPress={handleStartCapture}
+          disabled={!canStartCapture}
+        >
+          <Text style={styles.startButtonText}>Start Capture</Text>
+        </Pressable>
       </View>
     </View>
   );
@@ -60,41 +62,52 @@ export default function CameraScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-  },
-  centered: {
-    flex: 1,
     justifyContent: 'center',
-    alignItems: 'center',
     padding: 24,
-    gap: 16,
+    gap: 32,
   },
-  message: {
-    textAlign: 'center',
-    fontSize: 16,
+  sessionInfo: {
+    alignItems: 'center',
+    gap: 4,
   },
-  grantButton: {
-    backgroundColor: '#208AEF',
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    borderRadius: 8,
+  sessionLabel: {
+    fontSize: 13,
+    color: '#8e8e93',
+    textTransform: 'uppercase',
   },
-  grantButtonText: {
-    color: '#fff',
+  sessionValue: {
+    fontSize: 20,
     fontWeight: '600',
   },
-  controls: {
-    position: 'absolute',
-    bottom: 40,
-    left: 0,
-    right: 0,
-    alignItems: 'center',
+  form: {
+    gap: 12,
   },
-  shutterButton: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    backgroundColor: '#fff',
-    borderWidth: 4,
-    borderColor: 'rgba(255,255,255,0.4)',
+  inputLabel: {
+    fontSize: 13,
+    color: '#8e8e93',
+    textTransform: 'uppercase',
+  },
+  input: {
+    borderWidth: 1,
+    borderColor: '#d1d1d6',
+    borderRadius: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 17,
+  },
+  startButton: {
+    backgroundColor: '#208AEF',
+    borderRadius: 8,
+    paddingVertical: 14,
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  startButtonDisabled: {
+    backgroundColor: '#b7d9f9',
+  },
+  startButtonText: {
+    color: '#fff',
+    fontSize: 17,
+    fontWeight: '600',
   },
 });
