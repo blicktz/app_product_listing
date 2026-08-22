@@ -13,6 +13,8 @@ The Camera View's layout mirrors `IMG_7883`: top-right "Done" button (no flash/c
 
 **Update (resolution fix):** captured photos were coming out at 1080x1080 instead of matching eBay's 1600x1600 output. Root cause: we never set `pictureSize` on `CameraView`, so it defaulted to `"High"` (`AVCaptureSession.Preset.high`, confirmed in `node_modules/expo-camera/ios/CameraViewModule.swift`) — a preset shared with video recording that caps well below the sensor's actual photo resolution. We were not downsizing anywhere in our own code; the cap was entirely in the uncustomized capture preset. Fix: set `pictureSize="Photo"` (`AVCaptureSession.Preset.photo`, confirmed in `node_modules/expo-camera/ios/Current/CameraRecordingOptions.swift`) for full-resolution capture, then resize the square crop down to exactly 1600x1600 when it exceeds that (never upscale if a device's native capture is smaller).
 
+**Update (deferred processing — fixed shutter lag):** the 1600x1600 fix introduced a noticeable per-shot delay, since `crop()` + `resize()` execute together in one native decode/transform/encode pass inside `renderAsync()`, `await`ed synchronously before the thumbnail could update. Fix: moved that entire pass — plus the Camera Roll backup save, which depends on the cropped square image per the PRD's "1:1" backup wording — out of the capture handler and into a single batch that runs when "Done" is tapped, with a full-screen spinner overlay on the Camera View blocking input until the batch completes (then it navigates back to Home View and shows the alert). `handleCapture` now just appends the raw `takePictureAsync()` result (`uri`, `width`, `height`) to session state; the thumbnail strip renders that raw file directly with `resizeMode="cover"`, which looks identical to a real square crop at thumbnail size with zero processing cost. See the updated "Capture flow" / "Done flow" sections below.
+
 ## Approach
 
 ### 1. New dependencies
@@ -40,19 +42,16 @@ The Camera View's layout mirrors `IMG_7883`: top-right "Done" button (no flash/c
 - Thumbnail strip: horizontal `ScrollView` just above the bottom row, rendering each session photo as a `Pressable` square `Image` with a small white circular "×" badge in its top-right corner (visual indicator only, not a separate tap target). Tapping anywhere on the thumbnail deletes it immediately (removes from state + deletes the cached file), no confirmation.
 - Bottom row: left = photo count text (`"N/24"` format, per `IMG_7883`), center = circular shutter button (reusing Phase 1's shutter styling), disabled/dimmed once `photos.length === 24`.
 
-**Capture flow (shutter tap):**
-0. No-op if `photos.length >= MAX_PHOTOS` (24) — guards against a queued tap landing after the cap is hit.
+**Capture flow (shutter tap) — lightweight, no processing:**
+0. No-op if `photos.length >= MAX_PHOTOS` (24) or `isProcessing` is true.
 1. `cameraRef.current?.takePictureAsync()`.
-2. Crop to centered square with `expo-image-manipulator`: `size = min(photo.width, photo.height)`, `origin = centered`, via `ImageManipulator.manipulate(photo.uri).crop(...)`. If `size > MAX_OUTPUT_SIZE` (1600), chain `.resize({ width: 1600, height: 1600 })` before rendering — never upscale if the native capture is smaller. Then `.renderAsync()` → `.saveAsync(...)`. This is the imperative (non-hook) API, callable inside the async handler.
-3. Append the cropped file's URI to session `photos` state → thumbnail strip updates immediately (satisfies "immediately save to cache for fast UI").
-4. Fire-and-forget `MediaLibrary.saveToLibraryAsync(croppedUri)` (Phase 1's existing pattern) as the Camera Roll backup — not awaited before updating UI, so the shutter stays responsive for rapid shots.
+2. Append `{ id, uri: photo.uri, width: photo.width, height: photo.height }` directly to session `photos` state — no crop, no resize, no Camera Roll save. Thumbnail strip renders `photo.uri` (the raw capture) with `resizeMode="cover"` in the fixed-size thumbnail box, which crops-to-fill visually identically to a real square crop.
 
-**Done flow:**
-- Enabled only when `photos.length > 0`.
-- Build final filenames from the surviving queue's current order: index `i` → `NN = String(i + 1).padStart(2, '0')` → `${sku}_${NN}.jpg`.
-- Copy each cropped photo into `Directory(Paths.cache, 'sessions', dateRoot, sku)` (created with intermediates) under its final name — this is local-only prep matching the R2 path/naming convention for Phase 3, per the PRD.
-- Show `Alert.alert('Ready for Upload', "${photos.length} photo(s) will be uploaded to R2 at /${dateRoot}/${sku}/")` — no real upload, per the PRD's explicit instruction for this phase.
-- `router.back()` to Home View.
+**Done flow (batch processing + spinner):**
+- No-op if already processing or `photos.length === 0`; otherwise sets `isProcessing = true`, which renders a full-screen spinner overlay on the Camera View and disables Done/shutter/thumbnail-delete underneath.
+- Resolves media-library permission once (reusing `mediaPermission`/`requestMediaPermission`), then creates `Directory(Paths.cache, 'sessions', dateRoot, sku)` (with intermediates).
+- Sequentially, for each surviving photo in order (`i` → `NN = String(i + 1).padStart(2, '0')`): crop to centered square (`size = min(width, height)`) → conditional `.resize({ width: 1600, height: 1600 })` if `size > 1600` → `.renderAsync()` → `.saveAsync(...)` → `await MediaLibrary.saveToLibraryAsync(cropped.uri)` (now awaited, not fire-and-forget, since this all happens before navigating away) → copy into the session directory as `${sku}_${NN}.jpg`.
+- Sets `isProcessing = false`, shows `Alert.alert('Ready for Upload', "${photos.length} photo(s) will be uploaded to R2 at /${dateRoot}/${sku}/")` (no real upload, per the PRD's explicit instruction for this phase), then `router.back()` to Home View.
 
 ### 5. State management
 - Camera View: local `useState` for the `photos` array (`{ id, uri }[]`). No global store needed — `sku`/`dateRoot` flow in as route params (both plain strings), scope is a single active session.

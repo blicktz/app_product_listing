@@ -43,11 +43,10 @@ This view handles the core photo acquisition, designed to emulate the eBay mobil
 **Underlying Logic & Data Flow (Camera View):**
 
 1. **Local Caching & Album:**  
-   * When the capture button is pressed, the image is taken.  
-   * Immediately save the image to the system cache (for fast UI rendering in the thumbnail strip).  
-   * Simultaneously, save a copy of the high-res 1:1 image to the device's system photo album (Camera Roll) as a local backup.  
+   * When the capture button is pressed, the image is taken and immediately shown in the thumbnail strip directly from the camera's own temp cache file — no crop/resize happens per-shot, so the shutter stays responsive for rapid consecutive captures.  
+   * The square crop, downsize to 1600x1600, and the high-res 1:1 Camera Roll backup save all happen **in a single batch when "Done" is tapped** (not per-shot) — see "Session Completion" below. A processing indicator (spinner) is shown on the Camera View for the duration of this batch, blocking further input, since cropping/resizing full-resolution photos is CPU-intensive enough to cause a visible per-shot delay if done immediately after each capture.  
 2. **Session Completion & Upload Trigger:**  
-   * When the "Done" button is tapped, the Camera View closes.  
+   * When the "Done" button is tapped: a processing spinner appears on the Camera View, then each surviving photo is cropped to a centered square, downsized to 1600x1600 (if larger), saved to the Camera Roll, and copied into the session's local folder with its final name. Once all photos are processed, the Camera View closes (returns to Home View) and the "ready for upload" alert is shown.  
    * **Upload Trigger:** This action initiates the background upload process to Cloudflare R2 for all images currently held in the session queue (i.e., those not deleted).  
 3. **R2 Structuring & Naming:**  
    * **Path Structure:** Images must be uploaded to the specific path defined by the Home View: /{Date Root Folder}/{SKU}/  

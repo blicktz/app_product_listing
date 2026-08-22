@@ -20,6 +20,8 @@ import { Directory, File, Paths } from 'expo-file-system';
 type SessionPhoto = {
   id: string;
   uri: string;
+  width: number;
+  height: number;
 };
 
 const THUMBNAIL_SIZE = 64;
@@ -38,6 +40,7 @@ export default function CameraScreen() {
 
   const [photos, setPhotos] = useState<SessionPhoto[]>([]);
   const [previewSize, setPreviewSize] = useState({ width: 0, height: 0 });
+  const [isProcessing, setIsProcessing] = useState(false);
 
   if (!permission) {
     return (
@@ -73,33 +76,21 @@ export default function CameraScreen() {
       return;
     }
 
-    const size = Math.min(photo.width, photo.height);
-    const originX = (photo.width - size) / 2;
-    const originY = (photo.height - size) / 2;
-
-    const context = ImageManipulator.manipulate(photo.uri);
-    context.crop({ originX, originY, width: size, height: size });
-    if (size > MAX_OUTPUT_SIZE) {
-      context.resize({ width: MAX_OUTPUT_SIZE, height: MAX_OUTPUT_SIZE });
-    }
-    const rendered = await context.renderAsync();
-    const cropped = await rendered.saveAsync({ format: SaveFormat.JPEG, compress: 0.9 });
-
     setPhotos((current) => [
       ...current,
-      { id: `photo-${nextPhotoId.current++}`, uri: cropped.uri },
+      {
+        id: `photo-${nextPhotoId.current++}`,
+        uri: photo.uri,
+        width: photo.width,
+        height: photo.height,
+      },
     ]);
-
-    let permissionToSave = mediaPermission;
-    if (!permissionToSave?.granted) {
-      permissionToSave = await requestMediaPermission();
-    }
-    if (permissionToSave.granted) {
-      MediaLibrary.saveToLibraryAsync(cropped.uri).catch(() => {});
-    }
   };
 
   const handleDeletePhoto = (id: string) => {
+    if (isProcessing) {
+      return;
+    }
     setPhotos((current) => {
       const target = current.find((photo) => photo.id === id);
       if (target) {
@@ -109,15 +100,45 @@ export default function CameraScreen() {
     });
   };
 
-  const handleDone = () => {
+  const handleDone = async () => {
+    if (isProcessing || photos.length === 0) {
+      return;
+    }
+
+    setIsProcessing(true);
+
+    let permissionToSave = mediaPermission;
+    if (!permissionToSave?.granted) {
+      permissionToSave = await requestMediaPermission();
+    }
+
     const sessionDir = new Directory(Paths.cache, 'sessions', dateRoot, sku);
     sessionDir.create({ intermediates: true, idempotent: true });
 
-    photos.forEach((photo, index) => {
+    for (let index = 0; index < photos.length; index++) {
+      const photo = photos[index];
+      const size = Math.min(photo.width, photo.height);
+      const originX = (photo.width - size) / 2;
+      const originY = (photo.height - size) / 2;
+
+      const context = ImageManipulator.manipulate(photo.uri);
+      context.crop({ originX, originY, width: size, height: size });
+      if (size > MAX_OUTPUT_SIZE) {
+        context.resize({ width: MAX_OUTPUT_SIZE, height: MAX_OUTPUT_SIZE });
+      }
+      const rendered = await context.renderAsync();
+      const cropped = await rendered.saveAsync({ format: SaveFormat.JPEG, compress: 0.9 });
+
+      if (permissionToSave.granted) {
+        await MediaLibrary.saveToLibraryAsync(cropped.uri).catch(() => {});
+      }
+
       const nn = String(index + 1).padStart(2, '0');
       const destination = new File(sessionDir, `${sku}_${nn}.jpg`);
-      new File(photo.uri).copy(destination);
-    });
+      new File(cropped.uri).copy(destination);
+    }
+
+    setIsProcessing(false);
 
     Alert.alert(
       'Ready for Upload',
@@ -132,9 +153,12 @@ export default function CameraScreen() {
   return (
     <View style={styles.container}>
       <View style={[styles.topBar, { paddingTop: insets.top }]}>
-        <Pressable onPress={handleDone} disabled={photos.length === 0}>
+        <Pressable onPress={handleDone} disabled={photos.length === 0 || isProcessing}>
           <Text
-            style={[styles.doneButtonText, photos.length === 0 && styles.doneButtonTextDisabled]}
+            style={[
+              styles.doneButtonText,
+              (photos.length === 0 || isProcessing) && styles.doneButtonTextDisabled,
+            ]}
           >
             Done
           </Text>
@@ -169,8 +193,9 @@ export default function CameraScreen() {
               key={photo.id}
               style={styles.thumbnailWrapper}
               onPress={() => handleDeletePhoto(photo.id)}
+              disabled={isProcessing}
             >
-              <Image source={{ uri: photo.uri }} style={styles.thumbnail} />
+              <Image source={{ uri: photo.uri }} style={styles.thumbnail} resizeMode="cover" />
               <View style={styles.deleteBadge}>
                 <Text style={styles.deleteBadgeText}>×</Text>
               </View>
@@ -184,12 +209,22 @@ export default function CameraScreen() {
           {photos.length}/{MAX_PHOTOS}
         </Text>
         <Pressable
-          style={[styles.shutterButton, photos.length >= MAX_PHOTOS && styles.shutterButtonDisabled]}
+          style={[
+            styles.shutterButton,
+            (photos.length >= MAX_PHOTOS || isProcessing) && styles.shutterButtonDisabled,
+          ]}
           onPress={handleCapture}
-          disabled={photos.length >= MAX_PHOTOS}
+          disabled={photos.length >= MAX_PHOTOS || isProcessing}
         />
         <View style={styles.bottomBarSpacer} />
       </View>
+
+      {isProcessing && (
+        <View style={styles.processingOverlay}>
+          <ActivityIndicator size="large" color="#fff" />
+          <Text style={styles.processingText}>Preparing {photos.length} photo(s)...</Text>
+        </View>
+      )}
     </View>
   );
 }
@@ -302,5 +337,17 @@ const styles = StyleSheet.create({
   shutterButtonDisabled: {
     backgroundColor: '#5b7c99',
     borderColor: 'rgba(255,255,255,0.3)',
+  },
+  processingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.75)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 16,
+  },
+  processingText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
   },
 });
