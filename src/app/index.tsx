@@ -1,6 +1,15 @@
-import { useCallback, useState } from 'react';
-import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { useCallback, useEffect, useState } from 'react';
+import {
+  ActivityIndicator,
+  Alert,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
+import { checkSku } from '@/lib/uploadApi';
 
 function formatDateRoot(date: Date): string {
   const year = date.getFullYear();
@@ -9,25 +18,80 @@ function formatDateRoot(date: Date): string {
   return `${year}-${month}-${day}`;
 }
 
+type SkuCheck = {
+  sku: string;
+  count: number;
+  nextNumber: number;
+};
+
 export default function HomeScreen() {
   const router = useRouter();
   const [dateRoot] = useState(() => formatDateRoot(new Date()));
   const [sku, setSku] = useState('');
+  const [skuCheck, setSkuCheck] = useState<SkuCheck | null>(null);
+  const [isStartingCapture, setIsStartingCapture] = useState(false);
 
   useFocusEffect(
     useCallback(() => {
       setSku('');
+      setSkuCheck(null);
     }, [])
   );
 
-  const canStartCapture = sku.trim().length > 0;
+  useEffect(() => {
+    const trimmedSku = sku.trim();
+    if (!trimmedSku) {
+      return;
+    }
 
-  const handleStartCapture = () => {
+    const timer = setTimeout(() => {
+      checkSku(dateRoot, trimmedSku)
+        .then((result) => {
+          setSkuCheck({ sku: trimmedSku, ...result });
+        })
+        .catch(() => {
+          // Background check failed silently; Start Capture will retry on demand.
+        });
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [sku, dateRoot]);
+
+  const canStartCapture = sku.trim().length > 0 && !isStartingCapture;
+
+  const handleStartCapture = async () => {
+    const trimmedSku = sku.trim();
+    if (!trimmedSku || isStartingCapture) {
+      return;
+    }
+
+    let nextNumber: number;
+    if (skuCheck?.sku === trimmedSku) {
+      nextNumber = skuCheck.nextNumber;
+    } else {
+      setIsStartingCapture(true);
+      try {
+        const result = await checkSku(dateRoot, trimmedSku);
+        setSkuCheck({ sku: trimmedSku, ...result });
+        nextNumber = result.nextNumber;
+      } catch {
+        setIsStartingCapture(false);
+        Alert.alert(
+          'Could Not Verify SKU',
+          'Unable to check for existing photos. Check your connection and try again.'
+        );
+        return;
+      }
+      setIsStartingCapture(false);
+    }
+
     router.push({
       pathname: '/camera',
-      params: { sku: sku.trim(), dateRoot },
+      params: { sku: trimmedSku, dateRoot, startNumber: String(nextNumber) },
     });
   };
+
+  const existingCount = skuCheck?.sku === sku.trim() ? skuCheck.count : null;
 
   return (
     <View style={styles.container}>
@@ -46,13 +110,20 @@ export default function HomeScreen() {
           autoCapitalize="characters"
           autoCorrect={false}
         />
+        {existingCount !== null && existingCount > 0 && (
+          <Text style={styles.existingFilesText}>Existing files: {existingCount}</Text>
+        )}
 
         <Pressable
           style={[styles.startButton, !canStartCapture && styles.startButtonDisabled]}
           onPress={handleStartCapture}
           disabled={!canStartCapture}
         >
-          <Text style={styles.startButtonText}>Start Capture</Text>
+          {isStartingCapture ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <Text style={styles.startButtonText}>Start Capture</Text>
+          )}
         </Pressable>
       </View>
     </View>
@@ -94,6 +165,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 12,
     fontSize: 17,
+  },
+  existingFilesText: {
+    fontSize: 13,
+    color: '#c2410c',
+    marginTop: -4,
   },
   startButton: {
     backgroundColor: '#208AEF',

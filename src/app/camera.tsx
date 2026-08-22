@@ -16,6 +16,7 @@ import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as MediaLibrary from 'expo-media-library';
 import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 import { Directory, File, Paths } from 'expo-file-system';
+import { presignUpload } from '@/lib/uploadApi';
 
 type SessionPhoto = {
   id: string;
@@ -30,7 +31,11 @@ const MAX_OUTPUT_SIZE = 1600;
 
 export default function CameraScreen() {
   const router = useRouter();
-  const { sku, dateRoot } = useLocalSearchParams<{ sku: string; dateRoot: string }>();
+  const { sku, dateRoot, startNumber } = useLocalSearchParams<{
+    sku: string;
+    dateRoot: string;
+    startNumber: string;
+  }>();
   const insets = useSafeAreaInsets();
 
   const [permission, requestPermission] = useCameraPermissions();
@@ -41,6 +46,7 @@ export default function CameraScreen() {
   const [photos, setPhotos] = useState<SessionPhoto[]>([]);
   const [previewSize, setPreviewSize] = useState({ width: 0, height: 0 });
   const [isProcessing, setIsProcessing] = useState(false);
+  const [processingLabel, setProcessingLabel] = useState('');
 
   if (!permission) {
     return (
@@ -115,7 +121,12 @@ export default function CameraScreen() {
     const sessionDir = new Directory(Paths.cache, 'sessions', dateRoot, sku);
     sessionDir.create({ intermediates: true, idempotent: true });
 
+    const startingNumber = Number(startNumber) || 1;
+    const preparedFiles: { filename: string; localUri: string }[] = [];
+
     for (let index = 0; index < photos.length; index++) {
+      setProcessingLabel(`Preparing photo ${index + 1} of ${photos.length}...`);
+
       const photo = photos[index];
       const size = Math.min(photo.width, photo.height);
       const originX = (photo.width - size) / 2;
@@ -133,16 +144,63 @@ export default function CameraScreen() {
         await MediaLibrary.saveToLibraryAsync(cropped.uri).catch(() => {});
       }
 
-      const nn = String(index + 1).padStart(2, '0');
-      const destination = new File(sessionDir, `${sku}_${nn}.jpg`);
+      const nn = String(startingNumber + index).padStart(2, '0');
+      const filename = `${sku}_${nn}.jpg`;
+      const destination = new File(sessionDir, filename);
+      if (destination.exists) {
+        destination.delete();
+      }
       new File(cropped.uri).copy(destination);
+
+      preparedFiles.push({ filename, localUri: destination.uri });
+    }
+
+    try {
+      const { uploadUrls } = await presignUpload(
+        dateRoot,
+        sku,
+        preparedFiles.map((file) => file.filename)
+      );
+
+      for (let index = 0; index < preparedFiles.length; index++) {
+        const { filename, localUri } = preparedFiles[index];
+        setProcessingLabel(`Uploading photo ${index + 1} of ${preparedFiles.length}...`);
+
+        const uploadUrl = uploadUrls[filename];
+        if (!uploadUrl) {
+          throw new Error(`No upload URL returned for ${filename}`);
+        }
+
+        const fileResponse = await fetch(localUri);
+        const blob = await fileResponse.blob();
+        const putResponse = await fetch(uploadUrl, {
+          method: 'PUT',
+          body: blob,
+          headers: { 'Content-Type': 'image/jpeg' },
+        });
+
+        if (!putResponse.ok) {
+          throw new Error(`Upload failed for ${filename} (${putResponse.status})`);
+        }
+      }
+    } catch (error) {
+      setIsProcessing(false);
+      setProcessingLabel('');
+      Alert.alert(
+        'Upload Failed',
+        error instanceof Error
+          ? error.message
+          : 'Something went wrong uploading photos. Tap Done to retry.'
+      );
+      return;
     }
 
     setIsProcessing(false);
+    setProcessingLabel('');
 
     Alert.alert(
-      'Ready for Upload',
-      `${photos.length} photo(s) will be uploaded to R2 at /${dateRoot}/${sku}/`
+      'Upload Complete',
+      `${preparedFiles.length} photo(s) uploaded to R2 at /${dateRoot}/${sku}/`
     );
     router.back();
   };
@@ -222,7 +280,7 @@ export default function CameraScreen() {
       {isProcessing && (
         <View style={styles.processingOverlay}>
           <ActivityIndicator size="large" color="#fff" />
-          <Text style={styles.processingText}>Preparing {photos.length} photo(s)...</Text>
+          <Text style={styles.processingText}>{processingLabel}</Text>
         </View>
       )}
     </View>
