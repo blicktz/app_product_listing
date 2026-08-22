@@ -10,8 +10,10 @@ import {
 } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { checkSku } from '@/lib/uploadApi';
-import { takePendingSessionResult } from '@/lib/sessionResult';
+import { takePendingHomeAction } from '@/lib/pendingHomeAction';
 import { Toast } from '@/components/Toast';
+
+const SKU_ROW_HEIGHT = 48;
 
 const TOAST_DURATION_MS = 3000;
 
@@ -53,21 +55,29 @@ export default function HomeScreen() {
     setSku(text);
   };
 
+  const flashSku = (value: string) => {
+    skuRef.current = value;
+    setSku(value);
+    setIsFlashing(true);
+    setTimeout(() => setIsFlashing(false), 900);
+  };
+
   useFocusEffect(
     useCallback(() => {
-      const result = takePendingSessionResult();
-      if (result) {
-        setSuccessToast(result.message);
+      const action = takePendingHomeAction();
+
+      if (action?.type === 'upload-complete') {
+        setSuccessToast(action.message);
         setTimeout(() => setSuccessToast(null), TOAST_DURATION_MS);
+
+        const incremented = incrementTrailingNumber(skuRef.current.trim());
+        if (incremented !== null) {
+          flashSku(incremented);
+        }
+      } else if (action?.type === 'sku-scanned') {
+        flashSku(action.sku);
       }
 
-      const incremented = incrementTrailingNumber(skuRef.current.trim());
-      if (incremented !== null) {
-        skuRef.current = incremented;
-        setSku(incremented);
-        setIsFlashing(true);
-        setTimeout(() => setIsFlashing(false), 900);
-      }
       setSkuCheck(null);
     }, [])
   );
@@ -136,14 +146,24 @@ export default function HomeScreen() {
 
       <View style={styles.form}>
         <Text style={styles.inputLabel}>SKU</Text>
-        <TextInput
-          style={[styles.input, isFlashing && styles.inputFlash]}
-          value={sku}
-          onChangeText={handleSkuChange}
-          placeholder="Enter SKU"
-          autoCapitalize="characters"
-          autoCorrect={false}
-        />
+        <View style={styles.skuRow}>
+          <TextInput
+            style={[styles.input, isFlashing && styles.inputFlash]}
+            value={sku}
+            onChangeText={handleSkuChange}
+            placeholder="Enter SKU"
+            autoCapitalize="characters"
+            autoCorrect={false}
+          />
+          <Pressable style={styles.scanButton} onPress={() => router.push('/scan')}>
+            <View style={styles.scanIcon}>
+              <View style={[styles.scanIconCorner, styles.scanIconCornerTopLeft]} />
+              <View style={[styles.scanIconCorner, styles.scanIconCornerTopRight]} />
+              <View style={[styles.scanIconCorner, styles.scanIconCornerBottomLeft]} />
+              <View style={[styles.scanIconCorner, styles.scanIconCornerBottomRight]} />
+            </View>
+          </Pressable>
+        </View>
         {existingCount !== null && existingCount > 0 && (
           <Text style={styles.existingFilesText}>Existing files: {existingCount}</Text>
         )}
@@ -194,17 +214,65 @@ const styles = StyleSheet.create({
     color: '#8e8e93',
     textTransform: 'uppercase',
   },
+  skuRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
   input: {
+    flex: 1,
+    height: SKU_ROW_HEIGHT,
     borderWidth: 1,
     borderColor: '#d1d1d6',
     borderRadius: 8,
     paddingHorizontal: 14,
-    paddingVertical: 12,
     fontSize: 17,
   },
   inputFlash: {
     borderColor: '#208AEF',
     backgroundColor: '#e6f4fe',
+  },
+  scanButton: {
+    width: SKU_ROW_HEIGHT,
+    height: SKU_ROW_HEIGHT,
+    borderWidth: 1,
+    borderColor: '#d1d1d6',
+    borderRadius: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  scanIcon: {
+    width: 22,
+    height: 22,
+  },
+  scanIconCorner: {
+    position: 'absolute',
+    width: 8,
+    height: 8,
+    borderColor: '#208AEF',
+  },
+  scanIconCornerTopLeft: {
+    top: 0,
+    left: 0,
+    borderTopWidth: 2,
+    borderLeftWidth: 2,
+  },
+  scanIconCornerTopRight: {
+    top: 0,
+    right: 0,
+    borderTopWidth: 2,
+    borderRightWidth: 2,
+  },
+  scanIconCornerBottomLeft: {
+    bottom: 0,
+    left: 0,
+    borderBottomWidth: 2,
+    borderLeftWidth: 2,
+  },
+  scanIconCornerBottomRight: {
+    bottom: 0,
+    right: 0,
+    borderBottomWidth: 2,
+    borderRightWidth: 2,
   },
   existingFilesText: {
     fontSize: 13,

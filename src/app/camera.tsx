@@ -16,8 +16,9 @@ import * as MediaLibrary from 'expo-media-library';
 import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 import { Directory, File, Paths } from 'expo-file-system';
 import { presignUpload } from '@/lib/uploadApi';
-import { setPendingSessionResult } from '@/lib/sessionResult';
+import { setPendingHomeAction } from '@/lib/pendingHomeAction';
 import { Toast } from '@/components/Toast';
+import { CameraPermissionGate } from '@/components/CameraPermissionGate';
 
 const TOAST_DURATION_MS = 3000;
 
@@ -60,25 +61,6 @@ export default function CameraScreen() {
     }
     previousPhotoCount.current = photos.length;
   }, [photos.length]);
-
-  if (!permission) {
-    return (
-      <View style={styles.centered}>
-        <ActivityIndicator size="large" />
-      </View>
-    );
-  }
-
-  if (!permission.granted) {
-    return (
-      <View style={styles.centered}>
-        <Text style={styles.message}>We need your permission to use the camera</Text>
-        <Pressable style={styles.grantButton} onPress={requestPermission}>
-          <Text style={styles.grantButtonText}>Grant Permission</Text>
-        </Pressable>
-      </View>
-    );
-  }
 
   const handlePreviewLayout = (event: LayoutChangeEvent) => {
     const { width, height } = event.nativeEvent.layout;
@@ -211,7 +193,8 @@ export default function CameraScreen() {
     setIsProcessing(false);
     setProcessingLabel('');
 
-    setPendingSessionResult({
+    setPendingHomeAction({
+      type: 'upload-complete',
       message: `Uploaded ${preparedFiles.length} photo(s) to /${dateRoot}/${sku}/`,
     });
     router.back();
@@ -221,7 +204,8 @@ export default function CameraScreen() {
   const barHeight = Math.max((previewSize.height - squareSize) / 2, 0);
 
   return (
-    <View style={styles.container}>
+    <CameraPermissionGate permission={permission} requestPermission={requestPermission}>
+      <View style={styles.container}>
       <View style={[styles.topBar, { paddingTop: insets.top }]}>
         <Pressable onPress={handleDone} disabled={photos.length === 0 || isProcessing}>
           <Text
@@ -298,7 +282,8 @@ export default function CameraScreen() {
       )}
 
       <Toast message={errorToast ?? ''} type="error" visible={errorToast !== null} />
-    </View>
+      </View>
+    </CameraPermissionGate>
   );
 }
 
@@ -306,27 +291,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#000',
-  },
-  centered: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 24,
-    gap: 16,
-  },
-  message: {
-    textAlign: 'center',
-    fontSize: 16,
-  },
-  grantButton: {
-    backgroundColor: '#208AEF',
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    borderRadius: 8,
-  },
-  grantButtonText: {
-    color: '#fff',
-    fontWeight: '600',
   },
   topBar: {
     flexDirection: 'row',
