@@ -1,0 +1,29 @@
+I am starting a fresh Expo React Native project and want to verify that my development environment and camera permissions work properly.
+
+Please write the complete App.js file for a minimal camera test app.
+
+Requirements:
+
+Use the modern expo-camera library (CameraView and useCameraPermissions hook). Do NOT use the deprecated legacy Camera component.
+
+Handle camera permissions gracefully:
+
+If permissions are loading, show a loading indicator.
+
+If permission is not granted, display a message and a "Grant Permission" button.
+
+Once permission is granted:
+
+Render a full-screen camera preview (facing="back").
+
+Add a circular "Capture" shutter button at the bottom center.
+
+When the user taps Capture:
+
+Take a picture using cameraRef.current.takePictureAsync().
+
+Display a native Alert showing the captured image file URI (file://...) to confirm the shot succeeded.
+
+Keep all styles clean in a standard React Native StyleSheet.
+
+Please also provide the exact terminal commands to install the dependencies and run the app.
