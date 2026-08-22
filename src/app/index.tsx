@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -10,12 +10,26 @@ import {
 } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { checkSku } from '@/lib/uploadApi';
+import { takePendingSessionResult } from '@/lib/sessionResult';
+import { Toast } from '@/components/Toast';
+
+const TOAST_DURATION_MS = 3000;
 
 function formatDateRoot(date: Date): string {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, '0');
   const day = String(date.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
+}
+
+function incrementTrailingNumber(sku: string): string | null {
+  const match = sku.match(/-(\d+)$/);
+  if (!match) {
+    return null;
+  }
+  const digits = match[1];
+  const next = String(Number(digits) + 1).padStart(digits.length, '0');
+  return sku.slice(0, match.index) + '-' + next;
 }
 
 type SkuCheck = {
@@ -28,12 +42,32 @@ export default function HomeScreen() {
   const router = useRouter();
   const [dateRoot] = useState(() => formatDateRoot(new Date()));
   const [sku, setSku] = useState('');
+  const skuRef = useRef('');
   const [skuCheck, setSkuCheck] = useState<SkuCheck | null>(null);
   const [isStartingCapture, setIsStartingCapture] = useState(false);
+  const [isFlashing, setIsFlashing] = useState(false);
+  const [successToast, setSuccessToast] = useState<string | null>(null);
+
+  const handleSkuChange = (text: string) => {
+    skuRef.current = text;
+    setSku(text);
+  };
 
   useFocusEffect(
     useCallback(() => {
-      setSku('');
+      const result = takePendingSessionResult();
+      if (result) {
+        setSuccessToast(result.message);
+        setTimeout(() => setSuccessToast(null), TOAST_DURATION_MS);
+      }
+
+      const incremented = incrementTrailingNumber(skuRef.current.trim());
+      if (incremented !== null) {
+        skuRef.current = incremented;
+        setSku(incremented);
+        setIsFlashing(true);
+        setTimeout(() => setIsFlashing(false), 900);
+      }
       setSkuCheck(null);
     }, [])
   );
@@ -103,9 +137,9 @@ export default function HomeScreen() {
       <View style={styles.form}>
         <Text style={styles.inputLabel}>SKU</Text>
         <TextInput
-          style={styles.input}
+          style={[styles.input, isFlashing && styles.inputFlash]}
           value={sku}
-          onChangeText={setSku}
+          onChangeText={handleSkuChange}
           placeholder="Enter SKU"
           autoCapitalize="characters"
           autoCorrect={false}
@@ -126,6 +160,8 @@ export default function HomeScreen() {
           )}
         </Pressable>
       </View>
+
+      <Toast message={successToast ?? ''} type="success" visible={successToast !== null} />
     </View>
   );
 }
@@ -165,6 +201,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 12,
     fontSize: 17,
+  },
+  inputFlash: {
+    borderColor: '#208AEF',
+    backgroundColor: '#e6f4fe',
   },
   existingFilesText: {
     fontSize: 13,

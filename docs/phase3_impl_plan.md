@@ -34,16 +34,18 @@ Independent project (own `package.json`/`node_modules`) using **`aws4fetch`** (l
 - `handleDone` now runs two passes inside the existing processing-spinner block, updating `processingLabel` live at each step (e.g. "Preparing photo 3 of 8...", then "Uploading photo 3 of 8..."):
   1. **Local prep** (unchanged from Phase 2, but numbering is now `startingNumber + index` instead of `index + 1`): crop → conditional resize to 1600 → Camera Roll save → copy into the session's local folder. Before copying, deletes any pre-existing file at that destination path first (defensive — makes a Done-retry-after-failure safe to re-run, since it reuses the same filenames).
   2. **Upload**: one `presignUpload` call for all filenames in the batch, then for each file: `fetch(localUri).then(r => r.blob())` → `fetch(uploadUrl, { method: 'PUT', body: blob, headers: { 'Content-Type': 'image/jpeg' } })`.
-- On success: alert becomes `'Upload Complete'` with the real count/path, then navigates back to Home View.
-- On any upload failure: stops the loop, shows an error alert, and **stays on the Camera View** with the session's photos intact — the user just taps Done again to retry the whole batch. Full-batch retry (not per-photo resume) is a deliberate scope choice for this phase.
+- On success: navigates back to Home View, which shows a non-blocking success toast with the real count/path (see "Update (toasts + SKU auto-increment)" below — this replaced the original blocking alert).
+- On any upload failure: stops the loop, shows a non-blocking error toast on the Camera View itself, and **stays on the Camera View** with the session's photos intact — the user just taps Done again to retry the whole batch. Full-batch retry (not per-photo resume) is a deliberate scope choice for this phase.
 
 ## Files touched
 - `worker/` — new: `package.json`, `wrangler.toml`, `tsconfig.json`, `src/index.ts`, `.dev.vars.example`.
 - `.env.example` — new (committed template); `.env` — new (gitignored, filled in by the user with real values, never by Claude).
 - `.gitignore` — added `.env`, `worker/.dev.vars`, `worker/.wrangler/`.
 - `src/lib/uploadApi.ts` — new shared Worker client.
-- `src/app/index.tsx` — existing-files check + display, blocking Start Capture on an unresolved/failed check, passes `startNumber`.
-- `src/app/camera.tsx` — numbering from `startNumber`, real presigned-URL upload step, live processing label, success/failure alerts.
+- `src/lib/sessionResult.ts` — new (added in the toast follow-up) pending-result handoff between Camera View and Home View.
+- `src/components/Toast.tsx` — new (added in the toast follow-up) shared toast banner.
+- `src/app/index.tsx` — existing-files check + display, blocking Start Capture on an unresolved/failed check, passes `startNumber`; also SKU auto-increment + toast (toast follow-up).
+- `src/app/camera.tsx` — numbering from `startNumber`, real presigned-URL upload step, live processing label; toast + thumbnail auto-scroll (toast follow-up).
 
 ## What's left for the user to do (secrets can't be handled by Claude)
 1. `cd worker && npx wrangler login` — one-time browser login to the Cloudflare account that owns the `product-listings` bucket.
@@ -58,6 +60,13 @@ Independent project (own `package.json`/`node_modules`) using **`aws4fetch`** (l
 5. `cd worker && npx wrangler deploy` — deploys the Worker, prints its `*.workers.dev` URL.
 6. Copy `.env.example` to `.env` at the repo root, set `EXPO_PUBLIC_WORKER_URL` to that deployed URL and `EXPO_PUBLIC_APP_TOKEN` to the same value used for `APP_SHARED_TOKEN` above.
 7. Restart `npx expo start` (env vars are read at bundle time) and test.
+
+## Update (toasts + SKU auto-increment, thumbnail auto-scroll)
+Three follow-up refinements after initial end-to-end testing:
+
+- **Non-blocking toasts replace both `Alert.alert` calls in `handleDone`.** New `src/components/Toast.tsx` (a simple absolutely-positioned banner, green for success / red for error, self-contained `useSafeAreaInsets` so it clears the status bar/notch on both screens — moved to the *top* of the screen after testing showed a bottom-anchored toast got hidden behind the iOS keyboard) and `src/lib/sessionResult.ts` (a tiny synchronous "pending result" module-level channel, since expo-router's `router.back()` can't carry new params to the screen being returned to the way `router.push()` can). Camera View sets the pending result and calls `router.back()` on success (no alert); on failure it shows the toast locally and stays put, unchanged from before. Home View's existing focus effect (see below) reads and displays the pending result.
+- **SKU no longer clears after a successful upload — it auto-increments.** SKUs follow a `PREFIX-DATE-NNN` convention (e.g. `BUD-0820-005`); a new `incrementTrailingNumber()` helper in `src/app/index.tsx` matches a trailing `-NNN`, increments it, and re-pads to the same digit width, leaving the field untouched if the SKU doesn't end in that pattern. Runs in the same `useFocusEffect` that already fires only on successful return from Camera View (failure never navigates back, so this — and the increment — structurally never fires after a failed upload, with no extra gating needed). A `skuRef` mirrors the live input value so the effect can read it without depending on `sku` directly, which would otherwise change the callback's identity on every increment and re-trigger `useFocusEffect` in a runaway loop (it re-invokes immediately when the callback identity changes while the screen is already focused). A brief (~900ms) border/background flash on the input signals the auto-increment happened.
+- **Thumbnail strip auto-scrolls to the newest photo.** The strip was already a working horizontal `ScrollView`, but with 8+ photos a newly captured one could append off-screen with no visual cue beyond a barely-visible sliver at the edge. A `useEffect` watching `photos.length` now calls `scrollToEnd({ animated: true })` whenever it increases (not on deletions, so removing an earlier thumbnail doesn't yank the view back to the end), and the scroll indicator was turned back on as a persistent affordance.
 
 ## Verification
 - Worker: `npx tsc --noEmit` clean (already verified); `wrangler dev` locally, then `wrangler deploy`.

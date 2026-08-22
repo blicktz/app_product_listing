@@ -1,7 +1,6 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Image,
   LayoutChangeEvent,
   Pressable,
@@ -17,6 +16,10 @@ import * as MediaLibrary from 'expo-media-library';
 import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 import { Directory, File, Paths } from 'expo-file-system';
 import { presignUpload } from '@/lib/uploadApi';
+import { setPendingSessionResult } from '@/lib/sessionResult';
+import { Toast } from '@/components/Toast';
+
+const TOAST_DURATION_MS = 3000;
 
 type SessionPhoto = {
   id: string;
@@ -41,12 +44,22 @@ export default function CameraScreen() {
   const [permission, requestPermission] = useCameraPermissions();
   const [mediaPermission, requestMediaPermission] = MediaLibrary.usePermissions();
   const cameraRef = useRef<CameraView>(null);
+  const thumbnailStripRef = useRef<ScrollView>(null);
   const nextPhotoId = useRef(0);
 
   const [photos, setPhotos] = useState<SessionPhoto[]>([]);
   const [previewSize, setPreviewSize] = useState({ width: 0, height: 0 });
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingLabel, setProcessingLabel] = useState('');
+  const [errorToast, setErrorToast] = useState<string | null>(null);
+
+  const previousPhotoCount = useRef(0);
+  useEffect(() => {
+    if (photos.length > previousPhotoCount.current) {
+      thumbnailStripRef.current?.scrollToEnd({ animated: true });
+    }
+    previousPhotoCount.current = photos.length;
+  }, [photos.length]);
 
   if (!permission) {
     return (
@@ -186,22 +199,21 @@ export default function CameraScreen() {
     } catch (error) {
       setIsProcessing(false);
       setProcessingLabel('');
-      Alert.alert(
-        'Upload Failed',
+      const message =
         error instanceof Error
-          ? error.message
-          : 'Something went wrong uploading photos. Tap Done to retry.'
-      );
+          ? `Upload failed: ${error.message}`
+          : 'Upload failed. Tap Done to retry.';
+      setErrorToast(message);
+      setTimeout(() => setErrorToast(null), TOAST_DURATION_MS);
       return;
     }
 
     setIsProcessing(false);
     setProcessingLabel('');
 
-    Alert.alert(
-      'Upload Complete',
-      `${preparedFiles.length} photo(s) uploaded to R2 at /${dateRoot}/${sku}/`
-    );
+    setPendingSessionResult({
+      message: `Uploaded ${preparedFiles.length} photo(s) to /${dateRoot}/${sku}/`,
+    });
     router.back();
   };
 
@@ -241,10 +253,11 @@ export default function CameraScreen() {
 
       {photos.length > 0 && (
         <ScrollView
+          ref={thumbnailStripRef}
           horizontal
           style={styles.thumbnailStrip}
           contentContainerStyle={styles.thumbnailStripContent}
-          showsHorizontalScrollIndicator={false}
+          showsHorizontalScrollIndicator={true}
         >
           {photos.map((photo) => (
             <Pressable
@@ -283,6 +296,8 @@ export default function CameraScreen() {
           <Text style={styles.processingText}>{processingLabel}</Text>
         </View>
       )}
+
+      <Toast message={errorToast ?? ''} type="error" visible={errorToast !== null} />
     </View>
   );
 }
