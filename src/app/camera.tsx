@@ -10,6 +10,7 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as MediaLibrary from 'expo-media-library';
@@ -53,6 +54,17 @@ export default function CameraScreen() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingLabel, setProcessingLabel] = useState('');
   const [errorToast, setErrorToast] = useState<string | null>(null);
+  const [zoom, setZoom] = useState(0);
+  const zoomStartRef = useRef(0);
+
+  const pinchGesture = Gesture.Pinch()
+    .onStart(() => {
+      zoomStartRef.current = zoom;
+    })
+    .onUpdate((event) => {
+      const next = zoomStartRef.current + (event.scale - 1) * 0.75;
+      setZoom(Math.min(Math.max(next, 0), 1));
+    });
 
   const previousPhotoCount = useRef(0);
   useEffect(() => {
@@ -220,13 +232,16 @@ export default function CameraScreen() {
       </View>
 
       <View style={styles.previewContainer} onLayout={handlePreviewLayout}>
-        <CameraView
-          ref={cameraRef}
-          style={StyleSheet.absoluteFill}
-          facing="back"
-          ratio="1:1"
-          pictureSize="Photo"
-        />
+        <GestureDetector gesture={pinchGesture}>
+          <CameraView
+            ref={cameraRef}
+            style={StyleSheet.absoluteFill}
+            facing="back"
+            ratio="1:1"
+            pictureSize="Photo"
+            zoom={zoom}
+          />
+        </GestureDetector>
         {previewSize.height > 0 && (
           <>
             <View style={[styles.letterboxBar, { top: 0, height: barHeight }]} />
