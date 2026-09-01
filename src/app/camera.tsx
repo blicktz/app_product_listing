@@ -256,29 +256,33 @@ export default function CameraScreen() {
         )}
       </View>
 
-      {photos.length > 0 && (
-        <ScrollView
-          ref={thumbnailStripRef}
-          horizontal
-          style={styles.thumbnailStrip}
-          contentContainerStyle={styles.thumbnailStripContent}
-          showsHorizontalScrollIndicator={true}
-        >
-          {photos.map((photo) => (
-            <Pressable
-              key={photo.id}
-              style={styles.thumbnailWrapper}
-              onPress={() => handleDeletePhoto(photo.id)}
-              disabled={isProcessing}
-            >
-              <Image source={{ uri: photo.uri }} style={styles.thumbnail} resizeMode="cover" />
-              <View style={styles.deleteBadge}>
-                <Text style={styles.deleteBadgeText}>×</Text>
-              </View>
-            </Pressable>
-          ))}
-        </ScrollView>
-      )}
+      {/* Fixed-height slot reserved even when empty, so the camera preview area
+          (and the square viewport centered in it) never shifts when the first
+          thumbnail appears. */}
+      <View style={styles.thumbnailStrip}>
+        {photos.length > 0 && (
+          <ScrollView
+            ref={thumbnailStripRef}
+            horizontal
+            contentContainerStyle={styles.thumbnailStripContent}
+            showsHorizontalScrollIndicator={true}
+          >
+            {photos.map((photo) => (
+              <Pressable
+                key={photo.id}
+                style={styles.thumbnailWrapper}
+                onPress={() => handleDeletePhoto(photo.id)}
+                disabled={isProcessing}
+              >
+                <Image source={{ uri: photo.uri }} style={styles.thumbnail} resizeMode="cover" />
+                <View style={styles.deleteBadge}>
+                  <Text style={styles.deleteBadgeText}>×</Text>
+                </View>
+              </Pressable>
+            ))}
+          </ScrollView>
+        )}
+      </View>
 
       <View style={[styles.bottomBar, { paddingBottom: insets.bottom + 16 }]}>
         <Text style={styles.photoCount}>
@@ -338,7 +342,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#000',
   },
   thumbnailStrip: {
-    maxHeight: THUMBNAIL_SIZE + 16,
+    height: THUMBNAIL_SIZE + 16,
   },
   thumbnailStripContent: {
     paddingHorizontal: 12,
