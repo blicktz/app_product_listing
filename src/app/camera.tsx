@@ -17,6 +17,7 @@ import * as MediaLibrary from 'expo-media-library';
 import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 import { Directory, File, Paths } from 'expo-file-system';
 import { presignUpload } from '@/lib/uploadApi';
+import { useRemoteTrigger } from '@/lib/useRemoteTrigger';
 import { setPendingHomeAction } from '@/lib/pendingHomeAction';
 import { Toast } from '@/components/Toast';
 import { CameraPermissionGate } from '@/components/CameraPermissionGate';
@@ -42,6 +43,8 @@ export default function CameraScreen() {
     startNumber: string;
   }>();
   const insets = useSafeAreaInsets();
+  const startingNumber = Number(startNumber) || 1;
+  const existingCount = startingNumber - 1;
 
   const [permission, requestPermission] = useCameraPermissions();
   const [mediaPermission, requestMediaPermission] = MediaLibrary.usePermissions();
@@ -80,7 +83,7 @@ export default function CameraScreen() {
   };
 
   const handleCapture = async () => {
-    if (photos.length >= MAX_PHOTOS) {
+    if (existingCount + photos.length >= MAX_PHOTOS) {
       return;
     }
 
@@ -128,7 +131,6 @@ export default function CameraScreen() {
     const sessionDir = new Directory(Paths.cache, 'sessions', dateRoot, sku);
     sessionDir.create({ intermediates: true, idempotent: true });
 
-    const startingNumber = Number(startNumber) || 1;
     const preparedFiles: { filename: string; localUri: string }[] = [];
 
     for (let index = 0; index < photos.length; index++) {
@@ -212,6 +214,10 @@ export default function CameraScreen() {
     router.back();
   };
 
+  // Remote shutter: short press -> capture, long press -> done. The hook only
+  // reacts while this screen is focused, so Home's listener doesn't also fire.
+  useRemoteTrigger({ onCapture: handleCapture, onDone: handleDone });
+
   const squareSize = previewSize.width;
   const barHeight = Math.max((previewSize.height - squareSize) / 2, 0);
 
@@ -276,15 +282,16 @@ export default function CameraScreen() {
 
       <View style={[styles.bottomBar, { paddingBottom: insets.bottom + 16 }]}>
         <Text style={styles.photoCount}>
-          {photos.length}/{MAX_PHOTOS}
+          {existingCount + photos.length}/{MAX_PHOTOS}
         </Text>
         <Pressable
           style={[
             styles.shutterButton,
-            (photos.length >= MAX_PHOTOS || isProcessing) && styles.shutterButtonDisabled,
+            (existingCount + photos.length >= MAX_PHOTOS || isProcessing) &&
+              styles.shutterButtonDisabled,
           ]}
           onPress={handleCapture}
-          disabled={photos.length >= MAX_PHOTOS || isProcessing}
+          disabled={existingCount + photos.length >= MAX_PHOTOS || isProcessing}
         />
         <View style={styles.bottomBarSpacer} />
       </View>

@@ -2,6 +2,14 @@ name = "product-listings-upload-worker"
 main = "src/index.ts"
 compatibility_date = "2026-08-22"
 
+[[durable_objects.bindings]]
+name = "REMOTE_TRIGGER"
+class_name = "RemoteTriggerRoom"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["RemoteTriggerRoom"]
+
 [vars]
 R2_ACCOUNT_ID = "fced63ae8901b0e037ed08179f2bce17"
 R2_BUCKET_NAME = "product-listings"

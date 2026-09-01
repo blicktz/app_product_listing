@@ -1,4 +1,7 @@
 import { AwsClient } from 'aws4fetch';
+import { RemoteTriggerRoom, type RemoteTriggerAction } from './remoteTrigger';
+
+export { RemoteTriggerRoom };
 
 export interface Env {
   R2_ACCOUNT_ID: string;
@@ -6,6 +9,7 @@ export interface Env {
   R2_ACCESS_KEY_ID: string;
   R2_SECRET_ACCESS_KEY: string;
   APP_SHARED_TOKEN: string;
+  REMOTE_TRIGGER: DurableObjectNamespace<RemoteTriggerRoom>;
 }
 
 const PRESIGNED_URL_EXPIRY_SECONDS = 300;
@@ -109,13 +113,46 @@ async function handlePresignUpload(request: Request, env: Env): Promise<Response
   return jsonResponse({ uploadUrls });
 }
 
+function remoteTriggerStub(env: Env) {
+  return env.REMOTE_TRIGGER.getByName('default');
+}
+
+async function handleRemoteTriggerSocket(request: Request, env: Env): Promise<Response> {
+  const url = new URL(request.url);
+  if (url.searchParams.get('token') !== env.APP_SHARED_TOKEN) {
+    return new Response('Unauthorized', { status: 401 });
+  }
+  if (request.headers.get('Upgrade') !== 'websocket') {
+    return new Response('Expected WebSocket upgrade', { status: 426 });
+  }
+
+  return remoteTriggerStub(env).fetch(request);
+}
+
+async function handleRemoteTriggerPost(request: Request, env: Env): Promise<Response> {
+  const body = await request.json<{ action?: string }>().catch(() => null);
+  if (body?.action !== 'capture' && body?.action !== 'done') {
+    return jsonResponse({ error: 'action must be "capture" or "done"' }, 400);
+  }
+
+  await remoteTriggerStub(env).broadcast(body.action as RemoteTriggerAction);
+  return jsonResponse({ ok: true });
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
+    const url = new URL(request.url);
+
+    // Auth is checked per-route below: the WebSocket upgrade can't carry a
+    // custom Authorization header from React Native, so it's authorized via
+    // a query param instead, inside handleRemoteTriggerSocket.
+    if (request.method === 'GET' && url.pathname === '/remote-trigger/ws') {
+      return handleRemoteTriggerSocket(request, env);
+    }
+
     if (!isAuthorized(request, env)) {
       return jsonResponse({ error: 'Unauthorized' }, 401);
     }
-
-    const url = new URL(request.url);
 
     if (request.method === 'GET' && url.pathname === '/check-sku') {
       return handleCheckSku(request, env);
@@ -123,6 +160,10 @@ export default {
 
     if (request.method === 'POST' && url.pathname === '/presign-upload') {
       return handlePresignUpload(request, env);
+    }
+
+    if (request.method === 'POST' && url.pathname === '/remote-trigger') {
+      return handleRemoteTriggerPost(request, env);
     }
 
     return jsonResponse({ error: 'Not found' }, 404);

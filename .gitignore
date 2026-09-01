@@ -38,6 +38,9 @@ yarn-error.*
 worker/.dev.vars
 worker/.wrangler/
 
+# Mac remote-trigger script (shared secret, machine-local)
+mac-remote-trigger/.token
+
 # typescript
 *.tsbuildinfo
 

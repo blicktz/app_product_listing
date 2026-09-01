@@ -32,6 +32,14 @@ export function checkSku(date: string, sku: string): Promise<CheckSkuResult> {
   return callWorker<CheckSkuResult>(`/check-sku?${params.toString()}`);
 }
 
+export function getRemoteTriggerSocketUrl(): string {
+  if (!WORKER_URL || !APP_TOKEN) {
+    throw new Error('Missing EXPO_PUBLIC_WORKER_URL or EXPO_PUBLIC_APP_TOKEN configuration.');
+  }
+  const wsUrl = WORKER_URL.replace(/^http/, 'ws');
+  return `${wsUrl}/remote-trigger/ws?token=${encodeURIComponent(APP_TOKEN)}`;
+}
+
 export type PresignUploadResult = {
   uploadUrls: Record<string, string>;
 };
