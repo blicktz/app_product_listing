@@ -23,6 +23,9 @@ import { Toast } from '@/components/Toast';
 import { CameraPermissionGate } from '@/components/CameraPermissionGate';
 
 const TOAST_DURATION_MS = 3000;
+const MAX_UPLOAD_ATTEMPTS = 3;
+const UPLOAD_RETRY_DELAY_MS = 2000;
+const UPLOAD_TIMEOUT_MS = 30000;
 
 type SessionPhoto = {
   id: string;
@@ -164,7 +167,9 @@ export default function CameraScreen() {
       preparedFiles.push({ filename, localUri: destination.uri });
     }
 
-    try {
+    // One full pass over the batch: presign, then PUT each photo. Throws on the
+    // first failure so the retry loop below can run it again.
+    const uploadPreparedFiles = async () => {
       const { uploadUrls } = await presignUpload(
         dateRoot,
         sku,
@@ -182,22 +187,52 @@ export default function CameraScreen() {
 
         const fileResponse = await fetch(localUri);
         const blob = await fileResponse.blob();
-        const putResponse = await fetch(uploadUrl, {
-          method: 'PUT',
-          body: blob,
-          headers: { 'Content-Type': 'image/jpeg' },
-        });
+
+        // Abort a PUT that stalls past the timeout so a dropped connection
+        // counts as a failed attempt instead of hanging the spinner.
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), UPLOAD_TIMEOUT_MS);
+        let putResponse: Response;
+        try {
+          putResponse = await fetch(uploadUrl, {
+            method: 'PUT',
+            body: blob,
+            headers: { 'Content-Type': 'image/jpeg' },
+            signal: controller.signal,
+          });
+        } finally {
+          clearTimeout(timeout);
+        }
 
         if (!putResponse.ok) {
           throw new Error(`Upload failed for ${filename} (${putResponse.status})`);
         }
       }
-    } catch (error) {
+    };
+
+    let uploadError: unknown = null;
+    for (let attempt = 1; attempt <= MAX_UPLOAD_ATTEMPTS; attempt++) {
+      try {
+        await uploadPreparedFiles();
+        uploadError = null;
+        break;
+      } catch (error) {
+        uploadError = error;
+        if (attempt < MAX_UPLOAD_ATTEMPTS) {
+          setProcessingLabel(
+            `Upload failed — retrying (${attempt + 1}/${MAX_UPLOAD_ATTEMPTS})...`
+          );
+          await new Promise((resolve) => setTimeout(resolve, UPLOAD_RETRY_DELAY_MS));
+        }
+      }
+    }
+
+    if (uploadError) {
       setIsProcessing(false);
       setProcessingLabel('');
       const message =
-        error instanceof Error
-          ? `Upload failed: ${error.message}`
+        uploadError instanceof Error
+          ? `Upload failed after ${MAX_UPLOAD_ATTEMPTS} tries: ${uploadError.message}`
           : 'Upload failed. Tap Done to retry.';
       setErrorToast(message);
       setTimeout(() => setErrorToast(null), TOAST_DURATION_MS);

@@ -56,6 +56,15 @@ local function sendTrigger(action)
 end
 
 local pressedAt = nil
+local holdTimer = nil
+local triggerFired = false
+
+local function cancelHoldTimer()
+  if holdTimer then
+    holdTimer:stop()
+    holdTimer = nil
+  end
+end
 
 -- NOTE: this MUST be a global (no `local`). Hammerspoon does not retain
 -- eventtaps internally the way it does hs.hotkey.bind, so a local reference
@@ -70,15 +79,33 @@ remoteWatcher = hs.eventtap.new({ hs.eventtap.event.types.systemDefined }, funct
   end
 
   if info.down then
+    -- Guard against key auto-repeat while the button stays held.
     if not pressedAt then
       pressedAt = hs.timer.secondsSinceEpoch()
+      triggerFired = false
+      cancelHoldTimer()
+      -- Fire "done" the moment the hold threshold is reached, without waiting
+      -- for release, so the app can start crop/upload while the button is
+      -- still held.
+      holdTimer = hs.timer.doAfter(HOLD_THRESHOLD_SECONDS, function()
+        holdTimer = nil
+        if pressedAt then -- still held
+          triggerFired = true
+          sendTrigger("done")
+        end
+      end)
     end
   else
+    cancelHoldTimer()
     if pressedAt then
-      local heldFor = hs.timer.secondsSinceEpoch() - pressedAt
       pressedAt = nil
-      sendTrigger(heldFor >= HOLD_THRESHOLD_SECONDS and "done" or "capture")
+      -- If the threshold timer already sent "done", stay silent so we don't
+      -- also fire a "capture" on release.
+      if not triggerFired then
+        sendTrigger("capture")
+      end
     end
+    triggerFired = false
   end
 
   return true -- suppress: no Mac volume change, no volume HUD
