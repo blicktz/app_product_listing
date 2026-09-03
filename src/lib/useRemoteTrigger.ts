@@ -1,4 +1,4 @@
-import { useCallback, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { useFocusEffect } from 'expo-router';
 import { getRemoteTriggerSocketUrl } from './uploadApi';
 
@@ -17,11 +17,14 @@ type RemoteTriggerHandlers = {
  */
 export function useRemoteTrigger({ onCapture, onDone }: RemoteTriggerHandlers) {
   // Refs so the focus effect (set up once per focus) always calls the latest
-  // closure rather than a stale one captured at connect time.
+  // closure rather than a stale one captured at connect time. Kept current in
+  // an effect rather than during render so render stays pure.
   const onCaptureRef = useRef(onCapture);
-  onCaptureRef.current = onCapture;
   const onDoneRef = useRef(onDone);
-  onDoneRef.current = onDone;
+  useEffect(() => {
+    onCaptureRef.current = onCapture;
+    onDoneRef.current = onDone;
+  });
 
   useFocusEffect(
     useCallback(() => {
