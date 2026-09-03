@@ -1,10 +1,11 @@
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { CameraView, useCameraPermissions, type BarcodeScanningResult } from 'expo-camera';
 import { createAudioPlayer, setAudioModeAsync } from 'expo-audio';
 import { setPendingHomeAction } from '@/lib/pendingHomeAction';
+import { selectCloseFocusLens } from '@/lib/cameraLens';
 import { CameraPermissionGate } from '@/components/CameraPermissionGate';
 
 // Kept at module scope, and created eagerly (not at scan time), so the mp3
@@ -31,6 +32,20 @@ export default function ScanScreen() {
   const insets = useSafeAreaInsets();
   const [permission, requestPermission] = useCameraPermissions();
   const hasScanned = useRef(false);
+  const cameraRef = useRef<CameraView>(null);
+
+  // A SKU barcode is held close to the lens; since SDK 57 expo-camera's default
+  // wide-angle lens can't focus that near on this iPhone. Switch to a virtual
+  // multi-camera lens so iOS auto-engages the ultra-wide for close focus.
+  const [lens, setLens] = useState<string>();
+
+  const handleCameraReady = useCallback(async () => {
+    const lenses = (await cameraRef.current?.getAvailableLensesAsync()) ?? [];
+    const pick = selectCloseFocusLens(lenses);
+    if (pick) {
+      setLens(pick);
+    }
+  }, []);
 
   useEffect(() => {
     // iOS audio defaults to respecting the hardware silent switch; the scan
@@ -60,10 +75,13 @@ export default function ScanScreen() {
     <CameraPermissionGate permission={permission} requestPermission={requestPermission}>
       <View style={styles.container}>
         <CameraView
+          ref={cameraRef}
           style={StyleSheet.absoluteFill}
           facing="back"
+          selectedLens={lens}
           barcodeScannerSettings={{ barcodeTypes: ['code128', 'code39', 'code93', 'codabar'] }}
           onBarcodeScanned={handleBarcodeScanned}
+          onCameraReady={handleCameraReady}
         />
 
         <View style={[styles.topBar, { paddingTop: insets.top }]}>

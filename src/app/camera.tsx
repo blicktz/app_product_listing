@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Image,
@@ -17,6 +17,7 @@ import * as MediaLibrary from 'expo-media-library';
 import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 import { Directory, File, Paths } from 'expo-file-system';
 import { presignUpload } from '@/lib/uploadApi';
+import { selectCloseFocusLens } from '@/lib/cameraLens';
 import { useRemoteTrigger } from '@/lib/useRemoteTrigger';
 import { setPendingHomeAction } from '@/lib/pendingHomeAction';
 import { Toast } from '@/components/Toast';
@@ -63,7 +64,31 @@ export default function CameraScreen() {
   const [zoom, setZoom] = useState(0);
   const zoomStartRef = useRef(0);
 
+  // Since SDK 57 expo-camera forces the bare wide-angle lens on iOS, which on
+  // this iPhone can't focus closer than ~20 cm. Switch to a virtual multi-camera
+  // lens once the preview is ready so iOS auto-engages the ultra-wide for macro
+  // range (restores the SDK 54 behaviour). Name is localized, so resolve it from
+  // the device's own list rather than hardcoding.
+  const [lens, setLens] = useState<string>();
+  const [isCameraReady, setIsCameraReady] = useState(false);
+
+  const handleCameraReady = useCallback(async () => {
+    setIsCameraReady(true);
+    const lenses = (await cameraRef.current?.getAvailableLensesAsync()) ?? [];
+    const pick = selectCloseFocusLens(lenses);
+    if (pick) {
+      setLens(pick);
+    }
+  }, []);
+
+  /* eslint-disable react-hooks/refs -- these callbacks run during an active
+     pinch gesture, never during render; the ref snapshots the current zoom at
+     gesture start so event.scale (cumulative from that point) maps correctly. */
   const pinchGesture = Gesture.Pinch()
+    // Since SDK 57 react-native-reanimated is in the tree (via expo-router), so
+    // gesture-handler workletizes these callbacks onto the UI thread by default;
+    // setZoom() is plain JS and crashes there. Keep them on the JS thread.
+    .runOnJS(true)
     .onStart(() => {
       zoomStartRef.current = zoom;
     })
@@ -71,6 +96,7 @@ export default function CameraScreen() {
       const next = zoomStartRef.current + (event.scale - 1) * 0.75;
       setZoom(Math.min(Math.max(next, 0), 1));
     });
+  /* eslint-enable react-hooks/refs */
 
   const previousPhotoCount = useRef(0);
   useEffect(() => {
@@ -86,11 +112,17 @@ export default function CameraScreen() {
   };
 
   const handleCapture = async () => {
-    if (existingCount + photos.length >= MAX_PHOTOS) {
+    if (!isCameraReady || isProcessing || existingCount + photos.length >= MAX_PHOTOS) {
       return;
     }
 
-    const photo = await cameraRef.current?.takePictureAsync();
+    // The session is briefly not ready right after mount and again right after
+    // the lens switch in handleCameraReady. Swallow the rejection so a
+    // remote-shutter press in that window is a no-op, not an unhandled rejection.
+    const photo = await cameraRef.current?.takePictureAsync()?.catch((error) => {
+      console.warn('takePictureAsync failed:', error);
+      return undefined;
+    });
     if (!photo) {
       return;
     }
@@ -153,7 +185,9 @@ export default function CameraScreen() {
       const cropped = await rendered.saveAsync({ format: SaveFormat.JPEG, compress: 0.9 });
 
       if (permissionToSave.granted) {
-        await MediaLibrary.saveToLibraryAsync(cropped.uri).catch(() => {});
+        // saveToLibraryAsync is removed in SDK 57 (throws); the class-based
+        // Asset.create is its replacement.
+        await MediaLibrary.Asset.create(cropped.uri).catch(() => {});
       }
 
       const nn = String(startingNumber + index).padStart(2, '0');
@@ -162,7 +196,7 @@ export default function CameraScreen() {
       if (destination.exists) {
         destination.delete();
       }
-      new File(cropped.uri).copy(destination);
+      new File(cropped.uri).copySync(destination);
 
       preparedFiles.push({ filename, localUri: destination.uri });
     }
@@ -185,8 +219,10 @@ export default function CameraScreen() {
           throw new Error(`No upload URL returned for ${filename}`);
         }
 
-        const fileResponse = await fetch(localUri);
-        const blob = await fileResponse.blob();
+        // Read the local file through expo-file-system rather than fetch(): from
+        // SDK 56 the global fetch is expo/fetch, whose Response.blob() throws on
+        // native. A Uint8Array is a valid PUT body for the presigned R2 upload.
+        const body = await new File(localUri).bytes();
 
         // Abort a PUT that stalls past the timeout so a dropped connection
         // counts as a failed attempt instead of hanging the spinner.
@@ -196,7 +232,7 @@ export default function CameraScreen() {
         try {
           putResponse = await fetch(uploadUrl, {
             method: 'PUT',
-            body: blob,
+            body,
             headers: { 'Content-Type': 'image/jpeg' },
             signal: controller.signal,
           });
@@ -279,8 +315,10 @@ export default function CameraScreen() {
             style={StyleSheet.absoluteFill}
             facing="back"
             ratio="1:1"
-            pictureSize="Photo"
+            pictureSize="photo"
             zoom={zoom}
+            selectedLens={lens}
+            onCameraReady={handleCameraReady}
           />
         </GestureDetector>
         {previewSize.height > 0 && (
@@ -437,7 +475,7 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.3)',
   },
   processingOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: 'rgba(0,0,0,0.75)',
     justifyContent: 'center',
     alignItems: 'center',
