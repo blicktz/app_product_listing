@@ -48,6 +48,12 @@ export default function HomeScreen() {
   const skuRef = useRef('');
   const [skuCheck, setSkuCheck] = useState<SkuCheck | null>(null);
   const [isStartingCapture, setIsStartingCapture] = useState(false);
+  // Synchronous re-entry latch. isStartingCapture is state and only updates on
+  // the next render, so two remote clicks (or a double tap) in the same tick
+  // both pass the guard and push /camera twice — two camera sessions on one SKU
+  // whose position-derived uploads then clobber each other. This ref flips
+  // immediately. Cleared on the error path and whenever Home regains focus.
+  const isStartingCaptureRef = useRef(false);
   const [isFlashing, setIsFlashing] = useState(false);
   const [successToast, setSuccessToast] = useState<string | null>(null);
 
@@ -65,6 +71,10 @@ export default function HomeScreen() {
 
   useFocusEffect(
     useCallback(() => {
+      // Re-arm the start-capture latch: returning here (backed out of the
+      // camera, or a completed upload) means the next click should work.
+      isStartingCaptureRef.current = false;
+
       const action = takePendingHomeAction();
 
       if (action?.type === 'upload-complete') {
@@ -106,9 +116,10 @@ export default function HomeScreen() {
 
   const handleStartCapture = async () => {
     const trimmedSku = sku.trim();
-    if (!trimmedSku || isStartingCapture) {
+    if (!trimmedSku || isStartingCaptureRef.current) {
       return;
     }
+    isStartingCaptureRef.current = true;
 
     let nextNumber: number;
     if (skuCheck?.sku === trimmedSku) {
@@ -121,6 +132,7 @@ export default function HomeScreen() {
         nextNumber = result.nextNumber;
       } catch {
         setIsStartingCapture(false);
+        isStartingCaptureRef.current = false;
         Alert.alert(
           'Could Not Verify SKU',
           'Unable to check for existing photos. Check your connection and try again.'
