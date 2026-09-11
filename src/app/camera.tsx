@@ -17,6 +17,7 @@ import * as MediaLibrary from 'expo-media-library';
 import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 import { Directory, File, Paths } from 'expo-file-system';
 import { presignUpload } from '@/lib/uploadApi';
+import { sleep } from '@/lib/sleep';
 import { selectCloseFocusLens } from '@/lib/cameraLens';
 import { useRemoteTrigger } from '@/lib/useRemoteTrigger';
 import { setPendingHomeAction } from '@/lib/pendingHomeAction';
@@ -24,9 +25,13 @@ import { Toast } from '@/components/Toast';
 import { CameraPermissionGate } from '@/components/CameraPermissionGate';
 
 const TOAST_DURATION_MS = 3000;
-const MAX_UPLOAD_ATTEMPTS = 3;
-const UPLOAD_RETRY_DELAY_MS = 2000;
+const MAX_UPLOAD_ATTEMPTS = 5;
+const UPLOAD_RETRY_BASE_DELAY_MS = 10_000; // wait before the 1st retry
+const UPLOAD_RETRY_BACKOFF_FACTOR = 1.5; // ~10s, 15s, 22s, 30s
+const UPLOAD_RETRY_MAX_DELAY_MS = 30_000; // cap
 const UPLOAD_TIMEOUT_MS = 30000;
+
+type PreparedFile = { filename: string; localUri: string };
 
 type SessionPhoto = {
   id: string;
@@ -55,6 +60,10 @@ export default function CameraScreen() {
   const cameraRef = useRef<CameraView>(null);
   const thumbnailStripRef = useRef<ScrollView>(null);
   const nextPhotoId = useRef(0);
+  // Filenames that uploaded OK this session. Survives re-renders and repeated
+  // Done presses so a manual retry only re-uploads what's still missing. Keyed
+  // by the position-derived filename, so it's cleared whenever photos change.
+  const uploadedFilenamesRef = useRef<Set<string>>(new Set());
 
   const [photos, setPhotos] = useState<SessionPhoto[]>([]);
   const [previewSize, setPreviewSize] = useState({ width: 0, height: 0 });
@@ -136,6 +145,9 @@ export default function CameraScreen() {
         height: photo.height,
       },
     ]);
+    // Photo set changed: position-derived filenames no longer map to the same
+    // photos, so a partial-upload resume would be wrong. Start fresh.
+    uploadedFilenamesRef.current.clear();
   };
 
   const handleDeletePhoto = (id: string) => {
@@ -149,6 +161,8 @@ export default function CameraScreen() {
       }
       return current.filter((photo) => photo.id !== id);
     });
+    // See handleCapture: filenames are position-derived, so drop resume state.
+    uploadedFilenamesRef.current.clear();
   };
 
   const handleDone = async () => {
@@ -166,9 +180,17 @@ export default function CameraScreen() {
     const sessionDir = new Directory(Paths.cache, 'sessions', dateRoot, sku);
     sessionDir.create({ intermediates: true, idempotent: true });
 
-    const preparedFiles: { filename: string; localUri: string }[] = [];
+    const preparedFiles: PreparedFile[] = [];
 
     for (let index = 0; index < photos.length; index++) {
+      const nn = String(startingNumber + index).padStart(2, '0');
+      const filename = `${sku}_${nn}.jpg`;
+      // Already uploaded on an earlier Done press this session: skip the crop,
+      // the camera-roll save, and the re-upload.
+      if (uploadedFilenamesRef.current.has(filename)) {
+        continue;
+      }
+
       setProcessingLabel(`Preparing photo ${index + 1} of ${photos.length}...`);
 
       const photo = photos[index];
@@ -190,8 +212,6 @@ export default function CameraScreen() {
         await MediaLibrary.Asset.create(cropped.uri).catch(() => {});
       }
 
-      const nn = String(startingNumber + index).padStart(2, '0');
-      const filename = `${sku}_${nn}.jpg`;
       const destination = new File(sessionDir, filename);
       if (destination.exists) {
         destination.delete();
@@ -201,86 +221,109 @@ export default function CameraScreen() {
       preparedFiles.push({ filename, localUri: destination.uri });
     }
 
-    // One full pass over the batch: presign, then PUT each photo. Throws on the
-    // first failure so the retry loop below can run it again.
-    const uploadPreparedFiles = async () => {
+    let lastError: unknown = null;
+
+    // One pass over the still-pending files: presign them, PUT each one, and keep
+    // going past a failure so a single bad photo doesn't block the rest. Records
+    // each success in uploadedFilenamesRef and returns the files that failed.
+    const uploadPass = async (pending: PreparedFile[]): Promise<PreparedFile[]> => {
       const { uploadUrls } = await presignUpload(
         dateRoot,
         sku,
-        preparedFiles.map((file) => file.filename)
+        pending.map((file) => file.filename)
       );
 
-      for (let index = 0; index < preparedFiles.length; index++) {
-        const { filename, localUri } = preparedFiles[index];
-        setProcessingLabel(`Uploading photo ${index + 1} of ${preparedFiles.length}...`);
+      const failed: PreparedFile[] = [];
+      for (let index = 0; index < pending.length; index++) {
+        const { filename, localUri } = pending[index];
+        setProcessingLabel(`Uploading photo ${index + 1} of ${pending.length}...`);
 
-        const uploadUrl = uploadUrls[filename];
-        if (!uploadUrl) {
-          throw new Error(`No upload URL returned for ${filename}`);
-        }
-
-        // Read the local file through expo-file-system rather than fetch(): from
-        // SDK 56 the global fetch is expo/fetch, whose Response.blob() throws on
-        // native. A Uint8Array is a valid PUT body for the presigned R2 upload.
-        const body = await new File(localUri).bytes();
-
-        // Abort a PUT that stalls past the timeout so a dropped connection
-        // counts as a failed attempt instead of hanging the spinner.
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), UPLOAD_TIMEOUT_MS);
-        let putResponse: Response;
         try {
-          putResponse = await fetch(uploadUrl, {
-            method: 'PUT',
-            body,
-            headers: { 'Content-Type': 'image/jpeg' },
-            signal: controller.signal,
-          });
-        } finally {
-          clearTimeout(timeout);
-        }
+          const uploadUrl = uploadUrls[filename];
+          if (!uploadUrl) {
+            throw new Error(`No upload URL returned for ${filename}`);
+          }
 
-        if (!putResponse.ok) {
-          throw new Error(`Upload failed for ${filename} (${putResponse.status})`);
+          // Read the local file through expo-file-system rather than fetch():
+          // from SDK 56 the global fetch is expo/fetch, whose Response.blob()
+          // throws on native. A Uint8Array is a valid PUT body for the presigned
+          // R2 upload.
+          const body = await new File(localUri).bytes();
+
+          // Abort a PUT that stalls past the timeout so a dropped connection
+          // counts as a failed attempt instead of hanging the spinner.
+          const controller = new AbortController();
+          const timeout = setTimeout(() => controller.abort(), UPLOAD_TIMEOUT_MS);
+          let putResponse: Response;
+          try {
+            putResponse = await fetch(uploadUrl, {
+              method: 'PUT',
+              body,
+              headers: { 'Content-Type': 'image/jpeg' },
+              signal: controller.signal,
+            });
+          } finally {
+            clearTimeout(timeout);
+          }
+
+          if (!putResponse.ok) {
+            throw new Error(`Upload failed for ${filename} (${putResponse.status})`);
+          }
+
+          uploadedFilenamesRef.current.add(filename);
+        } catch (error) {
+          lastError = error;
+          failed.push(pending[index]);
         }
       }
+      return failed;
     };
 
-    let uploadError: unknown = null;
-    for (let attempt = 1; attempt <= MAX_UPLOAD_ATTEMPTS; attempt++) {
+    let pending = [...preparedFiles];
+    for (let attempt = 1; attempt <= MAX_UPLOAD_ATTEMPTS && pending.length > 0; attempt++) {
       try {
-        await uploadPreparedFiles();
-        uploadError = null;
-        break;
+        pending = await uploadPass(pending);
       } catch (error) {
-        uploadError = error;
-        if (attempt < MAX_UPLOAD_ATTEMPTS) {
-          setProcessingLabel(
-            `Upload failed — retrying (${attempt + 1}/${MAX_UPLOAD_ATTEMPTS})...`
-          );
-          await new Promise((resolve) => setTimeout(resolve, UPLOAD_RETRY_DELAY_MS));
-        }
+        // presignUpload itself failed: every file is still pending.
+        lastError = error;
+      }
+
+      if (pending.length === 0) {
+        break;
+      }
+      if (attempt < MAX_UPLOAD_ATTEMPTS) {
+        const delay = Math.min(
+          Math.round(UPLOAD_RETRY_BASE_DELAY_MS * UPLOAD_RETRY_BACKOFF_FACTOR ** (attempt - 1)),
+          UPLOAD_RETRY_MAX_DELAY_MS
+        );
+        setProcessingLabel(
+          `Upload failed — retry ${attempt + 1} of ${MAX_UPLOAD_ATTEMPTS} in ` +
+            `${Math.round(delay / 1000)}s (${pending.length} photo${
+              pending.length === 1 ? '' : 's'
+            } left)...`
+        );
+        await sleep(delay);
       }
     }
 
-    if (uploadError) {
+    if (pending.length > 0) {
       setIsProcessing(false);
       setProcessingLabel('');
-      const message =
-        uploadError instanceof Error
-          ? `Upload failed after ${MAX_UPLOAD_ATTEMPTS} tries: ${uploadError.message}`
-          : 'Upload failed. Tap Done to retry.';
-      setErrorToast(message);
+      console.warn('Upload incomplete:', lastError);
+      setErrorToast(
+        `${uploadedFilenamesRef.current.size} of ${photos.length} uploaded. Tap Done to retry the rest.`
+      );
       setTimeout(() => setErrorToast(null), TOAST_DURATION_MS);
       return;
     }
 
     setIsProcessing(false);
     setProcessingLabel('');
+    uploadedFilenamesRef.current.clear();
 
     setPendingHomeAction({
       type: 'upload-complete',
-      message: `Uploaded ${preparedFiles.length} photo(s) to /${dateRoot}/${sku}/`,
+      message: `Uploaded ${photos.length} photo(s) to /${dateRoot}/${sku}/`,
     });
     router.back();
   };
