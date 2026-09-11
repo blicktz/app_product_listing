@@ -24,6 +24,12 @@ import { setPendingHomeAction } from '@/lib/pendingHomeAction';
 import { Toast } from '@/components/Toast';
 import { CameraPermissionGate } from '@/components/CameraPermissionGate';
 
+// Save a copy of every cropped photo to the device's camera roll. Disabled for
+// now: the R2 upload + auto-retry path has been reliable across 18k+ photos, so
+// the local backup isn't earning its keep. Left wired up (not deleted) until
+// we're certain it can go. Flip to true to restore.
+const SAVE_TO_CAMERA_ROLL = false;
+
 const TOAST_DURATION_MS = 3000;
 const MAX_UPLOAD_ATTEMPTS = 5;
 const UPLOAD_RETRY_BASE_DELAY_MS = 10_000; // wait before the 1st retry
@@ -173,7 +179,7 @@ export default function CameraScreen() {
     setIsProcessing(true);
 
     let permissionToSave = mediaPermission;
-    if (!permissionToSave?.granted) {
+    if (SAVE_TO_CAMERA_ROLL && !permissionToSave?.granted) {
       permissionToSave = await requestMediaPermission();
     }
 
@@ -206,7 +212,7 @@ export default function CameraScreen() {
       const rendered = await context.renderAsync();
       const cropped = await rendered.saveAsync({ format: SaveFormat.JPEG, compress: 0.9 });
 
-      if (permissionToSave.granted) {
+      if (SAVE_TO_CAMERA_ROLL && permissionToSave?.granted) {
         // saveToLibraryAsync is removed in SDK 57 (throws); the class-based
         // Asset.create is its replacement.
         await MediaLibrary.Asset.create(cropped.uri).catch(() => {});
