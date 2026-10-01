@@ -76,15 +76,22 @@ async function applySettings(
   lens: string | undefined,
   settings: CameraTuningSettings
 ): Promise<CameraTuningInfo | null> {
-  // Start from auto every time so toggling WB off, or switching modes,
-  // never leaves a stale lock behind.
-  const base = await resetAuto(lens);
-  if (!base || !settings.manual) {
-    return base;
+  const current = await getDeviceInfo(lens);
+  if (!current || !settings.manual) {
+    return resetAuto(lens);
+  }
+
+  // Keep an existing WB lock across exposure changes: re-locking samples
+  // whatever is in frame (e.g. a colourful product), so only re-measure when
+  // the lock was turned on or the device lost it (lens switch, backgrounding).
+  const keepWb = settings.wbLocked && current.whiteBalanceMode === 'locked';
+  if (!keepWb) {
+    // Start from auto so toggling WB off never leaves a stale lock behind.
+    await resetAuto(lens);
   }
 
   let info: CameraTuningInfo | null;
-  if (base.supportsCustomExposure) {
+  if (current.supportsCustomExposure) {
     info = await setManualExposure(lens, settings.durationSec, settings.iso);
   } else {
     await setExposureBias(lens, settings.ev);
@@ -92,10 +99,10 @@ async function applySettings(
     info = await lockExposure(lens);
   }
 
-  if (settings.wbLocked) {
+  if (settings.wbLocked && !keepWb) {
     info = await lockWhiteBalance(
       lens,
-      base.supportsCustomWhiteBalance ? settings.wbTemperatureK : undefined
+      current.supportsCustomWhiteBalance ? settings.wbTemperatureK : undefined
     );
   }
   return info;

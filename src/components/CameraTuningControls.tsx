@@ -23,6 +23,10 @@ export function CameraTuningControls({ settings, info, error, onChange }: Camera
   // Lenses without custom exposure fall back to AE + bias + lock, so the
   // stepper adjusts EV there instead of ISO.
   const usesIso = info?.supportsCustomExposure ?? true;
+  // Same for WB: without custom gains the lock freezes the measured scene
+  // value rather than wbTemperatureK, so don't show a temperature on the chip.
+  const wbLabel =
+    info?.supportsCustomWhiteBalance === false ? 'WB: LOCK' : `WB ${settings.wbTemperatureK}K`;
   const stepValue = (direction: 1 | -1) =>
     usesIso
       ? onChange({ iso: step(ISO_STEPS, settings.iso, direction) })
@@ -51,7 +55,7 @@ export function CameraTuningControls({ settings, info, error, onChange }: Camera
         )}
         {settings.manual && (
           <Chip
-            label={settings.wbLocked ? `WB ${settings.wbTemperatureK}K` : 'WB: AUTO'}
+            label={settings.wbLocked ? wbLabel : 'WB: AUTO'}
             active={settings.wbLocked}
             onPress={() => onChange({ wbLocked: !settings.wbLocked })}
           />
