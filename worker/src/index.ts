@@ -14,7 +14,8 @@ export interface Env {
 
 const PRESIGNED_URL_EXPIRY_SECONDS = 300;
 const SEGMENT_PATTERN = /^[A-Za-z0-9_-]+$/;
-const FILENAME_PATTERN = /^[A-Za-z0-9_-]+\.jpg$/i;
+// Photos plus their capture-metadata sidecars ({sku}_{nn}.json).
+const FILENAME_PATTERN = /^[A-Za-z0-9_-]+\.(jpg|json)$/i;
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -62,9 +63,11 @@ async function handleCheckSku(request: Request, env: Env): Promise<Response> {
   const xml = await response.text();
   const keys = [...xml.matchAll(/<Key>([^<]*)<\/Key>/g)].map((match) => match[1]);
 
+  // Count photos only: each photo may also have a .json sidecar.
+  const photoKeys = keys.filter((key) => /\.jpg$/i.test(key));
   const numberPattern = new RegExp(`^${sku}_(\\d+)\\.jpg$`, 'i');
   let maxNumber = 0;
-  for (const key of keys) {
+  for (const key of photoKeys) {
     const filename = key.slice(prefix.length);
     const match = filename.match(numberPattern);
     if (match) {
@@ -72,7 +75,7 @@ async function handleCheckSku(request: Request, env: Env): Promise<Response> {
     }
   }
 
-  return jsonResponse({ count: keys.length, nextNumber: maxNumber + 1 });
+  return jsonResponse({ count: photoKeys.length, nextNumber: maxNumber + 1 });
 }
 
 async function handlePresignUpload(request: Request, env: Env): Promise<Response> {

@@ -26,6 +26,8 @@ import { Toast } from '@/components/Toast';
 import { CameraPermissionGate } from '@/components/CameraPermissionGate';
 import { CameraTuningControls } from '@/components/CameraTuningControls';
 import { useCameraTuning } from '@/lib/useCameraTuning';
+import { buildSidecar, sidecarFilename, type CaptureMetadata } from '@/lib/photoSidecar';
+import { getDeviceInfo } from '../../modules/camera-tuning';
 
 // Save a copy of every cropped photo to the device's camera roll. Disabled for
 // now: the R2 upload + auto-retry path has been reliable across 18k+ photos, so
@@ -45,13 +47,14 @@ const UPLOAD_RETRY_BACKOFF_FACTOR = 1.5; // ~10s, 15s, 22s, 30s
 const UPLOAD_RETRY_MAX_DELAY_MS = 30_000; // cap
 const UPLOAD_TIMEOUT_MS = 30000;
 
-type PreparedFile = { filename: string; localUri: string };
+type PreparedFile = { filename: string; localUri: string; contentType: string };
 
 type SessionPhoto = {
   id: string;
   uri: string;
   width: number;
   height: number;
+  metadata: CaptureMetadata;
 };
 
 const THUMBNAIL_SIZE = 64;
@@ -61,6 +64,7 @@ function pinchZoom(startZoom: number, scale: number) {
 }
 const MAX_PHOTOS = 24;
 const MAX_OUTPUT_SIZE = 1600;
+const JPEG_QUALITY = 0.9;
 
 export default function CameraScreen() {
   const router = useRouter();
@@ -155,8 +159,9 @@ export default function CameraScreen() {
     // The session is briefly not ready right after mount and again right after
     // the lens switch in handleCameraReady. Swallow the rejection so a
     // remote-shutter press in that window is a no-op, not an unhandled rejection.
+    const capturedAt = new Date().toISOString();
     const photo = await cameraRef.current
-      ?.takePictureAsync(ENABLE_CAMERA_TUNING ? { exif: true } : undefined)
+      ?.takePictureAsync({ exif: true })
       ?.catch((error) => {
         console.warn('takePictureAsync failed:', error);
         return undefined;
@@ -164,11 +169,9 @@ export default function CameraScreen() {
     if (!photo) {
       return;
     }
-    if (ENABLE_CAMERA_TUNING && photo.exif) {
-      // Spike check: the captured exposure should match the tuning readout.
-      const { ExposureTime, ISOSpeedRatings, ExposureBiasValue } = photo.exif;
-      console.log('[camera-tuning] captured', { ExposureTime, ISOSpeedRatings, ExposureBiasValue });
-    }
+    // Exposure / WB are locked, so the state read right after the shot is the
+    // state it was taken with. Null when the native module isn't in the build.
+    const device = await getDeviceInfo(lens).catch(() => null);
 
     setPhotos((current) => [
       ...current,
@@ -177,6 +180,14 @@ export default function CameraScreen() {
         uri: photo.uri,
         width: photo.width,
         height: photo.height,
+        metadata: {
+          capturedAt,
+          zoom,
+          lens: lens ?? null,
+          exif: photo.exif ?? null,
+          device,
+          original: { width: photo.width, height: photo.height },
+        },
       },
     ]);
     // Photo set changed: position-derived filenames no longer map to the same
@@ -219,6 +230,33 @@ export default function CameraScreen() {
     for (let index = 0; index < photos.length; index++) {
       const nn = String(startingNumber + index).padStart(2, '0');
       const filename = `${sku}_${nn}.jpg`;
+      const jsonFilename = sidecarFilename(filename);
+
+      const photo = photos[index];
+      const size = Math.min(photo.width, photo.height);
+      const originX = (photo.width - size) / 2;
+      const originY = (photo.height - size) / 2;
+      const outputSize = Math.min(size, MAX_OUTPUT_SIZE);
+
+      // Capture metadata sidecar ({sku}_{nn}.json) for post-processing; the
+      // crop below strips the JPEG's own EXIF.
+      if (!uploadedFilenamesRef.current.has(jsonFilename)) {
+        const sidecar = buildSidecar(sku, filename, photo.metadata, {
+          crop: { originX, originY, width: size, height: size },
+          output: { width: outputSize, height: outputSize, format: 'jpeg', quality: JPEG_QUALITY },
+        });
+        const jsonFile = new File(sessionDir, jsonFilename);
+        if (!jsonFile.exists) {
+          jsonFile.create();
+        }
+        jsonFile.write(JSON.stringify(sidecar, null, 2));
+        preparedFiles.push({
+          filename: jsonFilename,
+          localUri: jsonFile.uri,
+          contentType: 'application/json',
+        });
+      }
+
       // Already uploaded on an earlier Done press this session: skip the crop,
       // the camera-roll save, and the re-upload.
       if (uploadedFilenamesRef.current.has(filename)) {
@@ -227,18 +265,13 @@ export default function CameraScreen() {
 
       setProcessingLabel(`Preparing photo ${index + 1} of ${photos.length}...`);
 
-      const photo = photos[index];
-      const size = Math.min(photo.width, photo.height);
-      const originX = (photo.width - size) / 2;
-      const originY = (photo.height - size) / 2;
-
       const context = ImageManipulator.manipulate(photo.uri);
       context.crop({ originX, originY, width: size, height: size });
       if (size > MAX_OUTPUT_SIZE) {
         context.resize({ width: MAX_OUTPUT_SIZE, height: MAX_OUTPUT_SIZE });
       }
       const rendered = await context.renderAsync();
-      const cropped = await rendered.saveAsync({ format: SaveFormat.JPEG, compress: 0.9 });
+      const cropped = await rendered.saveAsync({ format: SaveFormat.JPEG, compress: JPEG_QUALITY });
 
       if (SAVE_TO_CAMERA_ROLL && permissionToSave?.granted) {
         // saveToLibraryAsync is removed in SDK 57 (throws); the class-based
@@ -252,10 +285,13 @@ export default function CameraScreen() {
       }
       new File(cropped.uri).copySync(destination);
 
-      preparedFiles.push({ filename, localUri: destination.uri });
+      preparedFiles.push({ filename, localUri: destination.uri, contentType: 'image/jpeg' });
     }
 
     let lastError: unknown = null;
+    // Photos only, not their .json sidecars.
+    const uploadedPhotoCount = () =>
+      [...uploadedFilenamesRef.current].filter((name) => name.endsWith('.jpg')).length;
 
     // One pass over the still-pending files: presign them, PUT each one, and keep
     // going past a failure so a single bad photo doesn't block the rest. Records
@@ -269,8 +305,8 @@ export default function CameraScreen() {
 
       const failed: PreparedFile[] = [];
       for (let index = 0; index < pending.length; index++) {
-        const { filename, localUri } = pending[index];
-        setProcessingLabel(`Uploading photo ${index + 1} of ${pending.length}...`);
+        const { filename, localUri, contentType } = pending[index];
+        setProcessingLabel(`Uploading file ${index + 1} of ${pending.length}...`);
 
         try {
           const uploadUrl = uploadUrls[filename];
@@ -293,7 +329,7 @@ export default function CameraScreen() {
             putResponse = await fetch(uploadUrl, {
               method: 'PUT',
               body,
-              headers: { 'Content-Type': 'image/jpeg' },
+              headers: { 'Content-Type': contentType },
               signal: controller.signal,
             });
           } finally {
@@ -345,7 +381,7 @@ export default function CameraScreen() {
       setProcessingLabel('');
       console.warn('Upload incomplete:', lastError);
       setErrorToast(
-        `${uploadedFilenamesRef.current.size} of ${photos.length} uploaded. Tap Done to retry the rest.`
+        `${uploadedPhotoCount()} of ${photos.length} uploaded. Tap Done to retry the rest.`
       );
       setTimeout(() => setErrorToast(null), TOAST_DURATION_MS);
       return;
