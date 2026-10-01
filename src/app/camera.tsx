@@ -23,12 +23,19 @@ import { useRemoteTrigger } from '@/lib/useRemoteTrigger';
 import { setPendingHomeAction } from '@/lib/pendingHomeAction';
 import { Toast } from '@/components/Toast';
 import { CameraPermissionGate } from '@/components/CameraPermissionGate';
+import { CameraTuningControls } from '@/components/CameraTuningControls';
+import { useCameraTuning } from '@/lib/useCameraTuning';
 
 // Save a copy of every cropped photo to the device's camera roll. Disabled for
 // now: the R2 upload + auto-retry path has been reliable across 18k+ photos, so
 // the local backup isn't earning its keep. Left wired up (not deleted) until
 // we're certain it can go. Flip to true to restore.
 const SAVE_TO_CAMERA_ROLL = false;
+
+// Experimental (camera-tuning-experiment branch): fixed exposure + white balance
+// via the local `modules/camera-tuning` native module, so the white backdrop
+// stops coming out grey. false = identical behaviour to before.
+const ENABLE_CAMERA_TUNING = true;
 
 const TOAST_DURATION_MS = 3000;
 const MAX_UPLOAD_ATTEMPTS = 5;
@@ -96,6 +103,8 @@ export default function CameraScreen() {
     }
   }, []);
 
+  const tuning = useCameraTuning(ENABLE_CAMERA_TUNING, lens, isCameraReady);
+
   /* eslint-disable react-hooks/refs -- these callbacks run during an active
      pinch gesture, never during render; the ref snapshots the current zoom at
      gesture start so event.scale (cumulative from that point) maps correctly. */
@@ -134,12 +143,19 @@ export default function CameraScreen() {
     // The session is briefly not ready right after mount and again right after
     // the lens switch in handleCameraReady. Swallow the rejection so a
     // remote-shutter press in that window is a no-op, not an unhandled rejection.
-    const photo = await cameraRef.current?.takePictureAsync()?.catch((error) => {
-      console.warn('takePictureAsync failed:', error);
-      return undefined;
-    });
+    const photo = await cameraRef.current
+      ?.takePictureAsync(ENABLE_CAMERA_TUNING ? { exif: true } : undefined)
+      ?.catch((error) => {
+        console.warn('takePictureAsync failed:', error);
+        return undefined;
+      });
     if (!photo) {
       return;
+    }
+    if (ENABLE_CAMERA_TUNING && photo.exif) {
+      // Spike check: the captured exposure should match the tuning readout.
+      const { ExposureTime, ISOSpeedRatings, ExposureBiasValue } = photo.exif;
+      console.log('[camera-tuning] captured', { ExposureTime, ISOSpeedRatings, ExposureBiasValue });
     }
 
     setPhotos((current) => [
@@ -375,6 +391,14 @@ export default function CameraScreen() {
             <View style={[styles.letterboxBar, { top: 0, height: barHeight }]} />
             <View style={[styles.letterboxBar, { bottom: 0, height: barHeight }]} />
           </>
+        )}
+        {ENABLE_CAMERA_TUNING && tuning.available && (
+          <CameraTuningControls
+            settings={tuning.settings}
+            info={tuning.info}
+            error={tuning.error}
+            onChange={tuning.update}
+          />
         )}
       </View>
 
