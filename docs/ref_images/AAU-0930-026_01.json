@@ -1,0 +1,95 @@
+{
+  "schemaVersion": 1,
+  "appVersion": "1.0.0",
+  "sku": "AAU-0930-026",
+  "filename": "AAU-0930-026_01.jpg",
+  "capturedAt": "2026-10-01T18:04:33.269Z",
+  "zoom": 0.038993692412787245,
+  "lens": "Back Triple Camera",
+  "exif": {
+    "LensModel": "iPhone 15 Pro Max back triple camera 2.22mm f/2.2",
+    "BrightnessValue": 7.584786620798956,
+    "SubsecTimeOriginal": "808",
+    "FNumber": 2.200000047683716,
+    "ApertureValue": 2.275007110039015,
+    "SensingMethod": 2,
+    "LensSpecification": [
+      2.2200000286102295,
+      15.65999984741211,
+      1.7799999713897705,
+      2.799999952316284
+    ],
+    "Flash": 16,
+    "ExposureProgram": 2,
+    "DateTimeOriginal": "2026:10:01 11:04:33",
+    "DateTimeDigitized": "2026:10:01 11:04:33",
+    "OffsetTimeDigitized": "-07:00",
+    "PixelYDimension": 2768,
+    "FocalLength": 2.2200000286102295,
+    "ExposureTime": 0.008333333333333333,
+    "ExposureBiasValue": 2,
+    "ColorSpace": 65535,
+    "ISOSpeedRatings": [
+      64
+    ],
+    "PixelXDimension": 4032,
+    "ExposureMode": 0,
+    "LensMake": "Apple",
+    "ExifVersion": "0232",
+    "SubsecTimeDigitized": "808",
+    "Orientation": 6,
+    "DigitalZoomRatio": 1.180327868852459,
+    "SceneType": 1,
+    "ShutterSpeedValue": 6.906948304564341,
+    "OffsetTime": "-07:00",
+    "CompositeImage": 2,
+    "SubjectArea": [
+      2014,
+      1507,
+      2214,
+      1328
+    ],
+    "MeteringMode": 5,
+    "WhiteBalance": 0,
+    "FocalLenIn35mmFilm": 16,
+    "OffsetTimeOriginal": "-07:00"
+  },
+  "device": {
+    "supportsCustomWhiteBalance": false,
+    "supportsLockedExposure": true,
+    "temperatureK": 4296.0849609375,
+    "whiteBalanceMode": "locked",
+    "maxDurationSec": 1,
+    "tint": -15.09719467163086,
+    "exposureMode": "locked",
+    "minBias": -8,
+    "maxBias": 8,
+    "lensName": "Back Triple Camera",
+    "maxIso": 12320,
+    "exposureDurationSec": 0.008333,
+    "supportsCustomExposure": false,
+    "deviceType": "AVCaptureDeviceTypeBuiltInTripleCamera",
+    "minIso": 55,
+    "minDurationSec": 0.000015,
+    "bias": 2,
+    "iso": 61.56922912597656
+  },
+  "original": {
+    "width": 2768,
+    "height": 4032
+  },
+  "processing": {
+    "crop": {
+      "originX": 0,
+      "originY": 632,
+      "width": 2768,
+      "height": 2768
+    },
+    "output": {
+      "width": 1600,
+      "height": 1600,
+      "format": "jpeg",
+      "quality": 0.9
+    }
+  }
+}
