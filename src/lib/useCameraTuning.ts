@@ -72,34 +72,57 @@ function saveSettings(settings: CameraTuningSettings) {
   }
 }
 
+// What the device's current exposure lock was made with. Module-level so it
+// outlives the camera screen: locks stay on the device between SKUs, and this
+// tells the next screen whether the existing lock still matches the settings.
+let lastExposure: Pick<CameraTuningSettings, 'durationSec' | 'iso' | 'ev'> & {
+  lens: string | undefined;
+} | null = null;
+
+function exposureMatches(lens: string | undefined, settings: CameraTuningSettings, custom: boolean) {
+  if (!lastExposure || lastExposure.lens !== lens) {
+    return false;
+  }
+  return custom
+    ? lastExposure.durationSec === settings.durationSec && lastExposure.iso === settings.iso
+    : lastExposure.ev === settings.ev;
+}
+
+// Only touches what changed. Exposure and WB locks are left on the device
+// between SKUs, so the next item is shot with the same shutter, ISO and WB
+// instead of re-metering with a new (possibly dark or colourful) product in
+// frame. Toggling a lock off and on re-measures it.
 async function applySettings(
   lens: string | undefined,
   settings: CameraTuningSettings
 ): Promise<CameraTuningInfo | null> {
-  const current = await getDeviceInfo(lens);
+  let current = await getDeviceInfo(lens);
   if (!current || !settings.manual) {
+    lastExposure = null;
     return resetAuto(lens);
   }
 
-  // Keep an existing WB lock across exposure changes: re-locking samples
-  // whatever is in frame (e.g. a colourful product), so only re-measure when
-  // the lock was turned on or the device lost it (lens switch, backgrounding).
-  const keepWb = settings.wbLocked && current.whiteBalanceMode === 'locked';
-  if (!keepWb) {
-    // Start from auto so toggling WB off never leaves a stale lock behind.
-    await resetAuto(lens);
+  if (!settings.wbLocked && current.whiteBalanceMode === 'locked') {
+    // The module can only release WB together with exposure, so this
+    // re-measures exposure too.
+    lastExposure = null;
+    current = (await resetAuto(lens)) ?? current;
   }
 
-  let info: CameraTuningInfo | null;
-  if (current.supportsCustomExposure) {
-    info = await setManualExposure(lens, settings.durationSec, settings.iso);
-  } else {
-    await setExposureBias(lens, settings.ev);
-    await sleep(BIAS_SETTLE_MS);
-    info = await lockExposure(lens);
+  let info: CameraTuningInfo | null = current;
+  const exposureLocked = current.exposureMode === 'locked' || current.exposureMode === 'custom';
+  if (!exposureLocked || !exposureMatches(lens, settings, current.supportsCustomExposure)) {
+    if (current.supportsCustomExposure) {
+      info = await setManualExposure(lens, settings.durationSec, settings.iso);
+    } else {
+      await setExposureBias(lens, settings.ev);
+      await sleep(BIAS_SETTLE_MS);
+      info = await lockExposure(lens);
+    }
+    lastExposure = { lens, durationSec: settings.durationSec, iso: settings.iso, ev: settings.ev };
   }
 
-  if (settings.wbLocked && !keepWb) {
+  if (settings.wbLocked && current.whiteBalanceMode !== 'locked') {
     info = await lockWhiteBalance(
       lens,
       current.supportsCustomWhiteBalance ? settings.wbTemperatureK : undefined
@@ -165,16 +188,6 @@ export function useCameraTuning(enabled: boolean, lens: string | undefined, isCa
         .catch(() => {});
     }, INFO_POLL_MS);
     return () => clearInterval(poll);
-  }, [active, lens]);
-
-  // Leave the camera on auto for other screens (e.g. the barcode scanner).
-  useEffect(() => {
-    if (!active) {
-      return;
-    }
-    return () => {
-      resetAuto(lens).catch(() => {});
-    };
   }, [active, lens]);
 
   const update = useCallback((patch: Partial<CameraTuningSettings>) => {

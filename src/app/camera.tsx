@@ -19,6 +19,7 @@ import { Directory, File, Paths } from 'expo-file-system';
 import { presignUpload } from '@/lib/uploadApi';
 import { sleep } from '@/lib/sleep';
 import { selectCloseFocusLens } from '@/lib/cameraLens';
+import { loadZoom, saveZoom } from '@/lib/cameraZoom';
 import { useRemoteTrigger } from '@/lib/useRemoteTrigger';
 import { setPendingHomeAction } from '@/lib/pendingHomeAction';
 import { Toast } from '@/components/Toast';
@@ -54,6 +55,10 @@ type SessionPhoto = {
 };
 
 const THUMBNAIL_SIZE = 64;
+
+function pinchZoom(startZoom: number, scale: number) {
+  return Math.min(Math.max(startZoom + (scale - 1) * 0.75, 0), 1);
+}
 const MAX_PHOTOS = 24;
 const MAX_OUTPUT_SIZE = 1600;
 
@@ -83,7 +88,8 @@ export default function CameraScreen() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingLabel, setProcessingLabel] = useState('');
   const [errorToast, setErrorToast] = useState<string | null>(null);
-  const [zoom, setZoom] = useState(0);
+  // Restored from the last SKU so every item is framed the same.
+  const [zoom, setZoom] = useState(loadZoom);
   const zoomStartRef = useRef(0);
 
   // Since SDK 57 expo-camera forces the bare wide-angle lens on iOS, which on
@@ -93,6 +99,7 @@ export default function CameraScreen() {
   // the device's own list rather than hardcoding.
   const [lens, setLens] = useState<string>();
   const [isCameraReady, setIsCameraReady] = useState(false);
+  const [isLensResolved, setIsLensResolved] = useState(false);
 
   const handleCameraReady = useCallback(async () => {
     setIsCameraReady(true);
@@ -101,9 +108,12 @@ export default function CameraScreen() {
     if (pick) {
       setLens(pick);
     }
+    setIsLensResolved(true);
   }, []);
 
-  const tuning = useCameraTuning(ENABLE_CAMERA_TUNING, lens, isCameraReady);
+  // Wait for the lens pick: tuning the default lens first would lock the wrong
+  // device and make the macro lens re-measure instead of keeping its lock.
+  const tuning = useCameraTuning(ENABLE_CAMERA_TUNING, lens, isCameraReady && isLensResolved);
 
   /* eslint-disable react-hooks/refs -- these callbacks run during an active
      pinch gesture, never during render; the ref snapshots the current zoom at
@@ -117,8 +127,10 @@ export default function CameraScreen() {
       zoomStartRef.current = zoom;
     })
     .onUpdate((event) => {
-      const next = zoomStartRef.current + (event.scale - 1) * 0.75;
-      setZoom(Math.min(Math.max(next, 0), 1));
+      setZoom(pinchZoom(zoomStartRef.current, event.scale));
+    })
+    .onEnd((event) => {
+      saveZoom(pinchZoom(zoomStartRef.current, event.scale));
     });
   /* eslint-enable react-hooks/refs */
 
