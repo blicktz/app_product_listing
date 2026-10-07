@@ -12,6 +12,7 @@ import {
 import { useFocusEffect, useRouter } from 'expo-router';
 import { checkSku } from '@/lib/uploadApi';
 import { useRemoteTrigger } from '@/lib/useRemoteTrigger';
+import { useHardwareShutter } from '@/lib/useHardwareShutter';
 import { takePendingHomeAction } from '@/lib/pendingHomeAction';
 import { Toast } from '@/components/Toast';
 import { ListingPill } from '@/components/ListingPill';
@@ -176,6 +177,7 @@ export default function HomeScreen() {
   // Remote shutter on the start screen: a short press begins the session,
   // same as tapping "Start Capture". Does nothing if no SKU is entered yet.
   useRemoteTrigger({ onCapture: handleStartCapture });
+  useHardwareShutter({ mode: 'volume', onCapture: handleStartCapture });
 
   const existingCount = skuCheck?.sku === sku.trim() ? skuCheck.count : null;
 

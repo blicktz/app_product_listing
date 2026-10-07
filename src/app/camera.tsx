@@ -22,6 +22,7 @@ import { sleep } from '@/lib/sleep';
 import { selectCloseFocusLens } from '@/lib/cameraLens';
 import { loadZoom, saveZoom } from '@/lib/cameraZoom';
 import { useRemoteTrigger } from '@/lib/useRemoteTrigger';
+import { useHardwareShutter } from '@/lib/useHardwareShutter';
 import { setPendingHomeAction } from '@/lib/pendingHomeAction';
 import { Toast } from '@/components/Toast';
 import { CameraPermissionGate } from '@/components/CameraPermissionGate';
@@ -473,6 +474,8 @@ export default function CameraScreen() {
   // Remote shutter: short press -> capture, long press -> done. The hook only
   // reacts while this screen is focused, so Home's listener doesn't also fire.
   useRemoteTrigger({ onCapture: handleCapture, onDone: handleDone });
+  // Same actions when the remote is paired to the phone itself.
+  useHardwareShutter({ mode: 'capture', onCapture: handleCapture, onDone: handleDone });
 
   const squareSize = previewSize.width;
   const barHeight = Math.max((previewSize.height - squareSize) / 2, 0);

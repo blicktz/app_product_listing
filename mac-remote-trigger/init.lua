@@ -1,5 +1,8 @@
 -- Product Listings remote shutter trigger.
 --
+-- Fallback path. When the remote is paired to the iPhone instead, the app
+-- handles it directly (modules/hardware-shutter) and this script isn't needed.
+--
 -- Pair the Bluetooth shutter remote to this Mac (Settings > Bluetooth) instead
 -- of the iPhone. It emulates the hardware Volume Up key, so pressing it fires
 -- a "SOUND_UP" system-defined key event here — the same key event a real
