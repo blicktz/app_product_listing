@@ -193,12 +193,29 @@ public class HardwareShutterModule: Module {
     Self.setVolume(Self.restingVolume, using: volumeView)
   }
 
-  private func resetVolume() {
-    guard let volumeView else {
+  // Right after the MPVolumeView is added, setting its slider is silently
+  // ignored, so a freshly entered mode could stay at max volume, where a
+  // Volume Up press changes nothing and never reaches us. Keep setting it until
+  // the system volume actually lands on the resting value.
+  private func resetVolume(attempt: Int = 0) {
+    guard mode == "volume" || attempt == 0, let volumeView else {
       return
     }
     ignoreVolumeUntil = Date().addingTimeInterval(Self.settleTime)
+    if abs(AVAudioSession.sharedInstance().outputVolume - Self.restingVolume) < 0.001 {
+      return
+    }
     Self.setVolume(Self.restingVolume, using: volumeView)
+    guard attempt < 30 else {
+      return
+    }
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+      // Stop if the mode was left (or re-entered with a new view) meanwhile.
+      guard let self, self.volumeView === volumeView else {
+        return
+      }
+      self.resetVolume(attempt: attempt + 1)
+    }
   }
 
   // MPVolumeView's slider is the only public way to set the system volume. It is
