@@ -86,7 +86,9 @@ public class HardwareShutterModule: Module {
   // MARK: - Capture mode
 
   private func startCaptureMode() -> Bool {
-    guard #available(iOS 17.2, *), let window = Self.keyWindow() else {
+    // Must sit on a view in the responder chain; the root view controller's view
+    // contains every screen, including the camera screen pushed on top.
+    guard #available(iOS 17.2, *), let view = Self.keyWindow()?.rootViewController?.view else {
       return false
     }
     let handler: (AVCaptureEvent) -> Void = { [weak self] event in
@@ -101,11 +103,14 @@ public class HardwareShutterModule: Module {
         break
       }
     }
-    // Primary is Volume Up (what the remote sends), secondary is Volume Down.
+    // Primary is Volume Down, secondary is Volume Up (what the remote sends).
     let interaction = AVCaptureEventInteraction(primary: handler, secondary: handler)
-    window.addInteraction(interaction)
+    // Not enabled by default; without this no events arrive and the buttons
+    // keep changing the volume.
+    interaction.isEnabled = true
+    view.addInteraction(interaction)
     self.interaction = interaction
-    interactionView = window
+    interactionView = view
     return true
   }
 
