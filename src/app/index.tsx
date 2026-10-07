@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Keyboard,
   Pressable,
   StyleSheet,
   Text,
@@ -13,6 +14,15 @@ import { checkSku } from '@/lib/uploadApi';
 import { useRemoteTrigger } from '@/lib/useRemoteTrigger';
 import { takePendingHomeAction } from '@/lib/pendingHomeAction';
 import { Toast } from '@/components/Toast';
+import { ListingPill } from '@/components/ListingPill';
+import {
+  CONDITION_COLORS,
+  CONDITION_LABELS,
+  STORE_COLORS,
+  completeListingConfig,
+  loadListingConfigDraft,
+  type ListingConfig,
+} from '@/lib/listingConfig';
 
 const SKU_ROW_HEIGHT = 48;
 
@@ -56,6 +66,9 @@ export default function HomeScreen() {
   const isStartingCaptureRef = useRef(false);
   const [isFlashing, setIsFlashing] = useState(false);
   const [successToast, setSuccessToast] = useState<string | null>(null);
+  const [listingConfig, setListingConfig] = useState<ListingConfig | null>(() =>
+    completeListingConfig(loadListingConfigDraft())
+  );
 
   const handleSkuChange = (text: string) => {
     skuRef.current = text;
@@ -74,6 +87,9 @@ export default function HomeScreen() {
       // Re-arm the start-capture latch: returning here (backed out of the
       // camera, or a completed upload) means the next click should work.
       isStartingCaptureRef.current = false;
+
+      // May have just changed on the listing-config screen.
+      setListingConfig(completeListingConfig(loadListingConfigDraft()));
 
       const action = takePendingHomeAction();
 
@@ -112,11 +128,13 @@ export default function HomeScreen() {
     return () => clearTimeout(timer);
   }, [sku, dateRoot]);
 
-  const canStartCapture = sku.trim().length > 0 && !isStartingCapture;
+  const canStartCapture = sku.trim().length > 0 && listingConfig !== null && !isStartingCapture;
 
   const handleStartCapture = async () => {
     const trimmedSku = sku.trim();
-    if (!trimmedSku || isStartingCaptureRef.current) {
+    // No silent default for condition/store: a batch generated with the wrong
+    // ones is wasted, so capture waits until both are chosen.
+    if (!trimmedSku || !listingConfig || isStartingCaptureRef.current) {
       return;
     }
     isStartingCaptureRef.current = true;
@@ -144,7 +162,14 @@ export default function HomeScreen() {
 
     router.push({
       pathname: '/camera',
-      params: { sku: trimmedSku, dateRoot, startNumber: String(nextNumber) },
+      params: {
+        sku: trimmedSku,
+        dateRoot,
+        startNumber: String(nextNumber),
+        // Snapshot of what Home showed, so the session uploads exactly that.
+        itemCondition: listingConfig.itemCondition,
+        ebayStore: listingConfig.ebayStore,
+      },
     });
   };
 
@@ -155,7 +180,9 @@ export default function HomeScreen() {
   const existingCount = skuCheck?.sku === sku.trim() ? skuCheck.count : null;
 
   return (
-    <View style={styles.container}>
+    // A tap anywhere outside the SKU field dismisses the keyboard; React Native
+    // doesn't blur a TextInput on outside taps by itself.
+    <Pressable style={styles.container} onPress={Keyboard.dismiss} accessible={false}>
       <View style={styles.sessionInfo}>
         <Text style={styles.sessionLabel}>Session folder</Text>
         <Text style={styles.sessionValue}>{dateRoot}/</Text>
@@ -171,6 +198,7 @@ export default function HomeScreen() {
             placeholder="Enter SKU"
             autoCapitalize="characters"
             autoCorrect={false}
+            returnKeyType="done"
           />
           <Pressable style={styles.scanButton} onPress={() => router.push('/scan')}>
             <View style={styles.scanIcon}>
@@ -181,6 +209,9 @@ export default function HomeScreen() {
             </View>
           </Pressable>
         </View>
+        {!listingConfig && (
+          <Text style={styles.existingFilesText}>Set listing config first.</Text>
+        )}
         {existingCount !== null && existingCount > 0 && (
           <Text style={styles.existingFilesText}>Existing files: {existingCount}</Text>
         )}
@@ -198,8 +229,32 @@ export default function HomeScreen() {
         </Pressable>
       </View>
 
+      <Pressable
+        style={[styles.listingCard, !listingConfig && styles.listingCardUnset]}
+        onPress={() => router.push('/listing-config')}
+      >
+        <View style={styles.listingCardBody}>
+          <Text style={styles.sessionLabel}>Listing</Text>
+          {listingConfig ? (
+            <View style={styles.listingPills}>
+              <ListingPill
+                label={CONDITION_LABELS[listingConfig.itemCondition].toUpperCase()}
+                color={CONDITION_COLORS[listingConfig.itemCondition]}
+              />
+              <ListingPill
+                label={listingConfig.ebayStore}
+                color={STORE_COLORS[listingConfig.ebayStore]}
+              />
+            </View>
+          ) : (
+            <Text style={styles.listingUnsetText}>Not set, tap to configure</Text>
+          )}
+        </View>
+        <Text style={styles.chevron}>›</Text>
+      </Pressable>
+
       <Toast message={successToast ?? ''} type="success" visible={successToast !== null} />
-    </View>
+    </Pressable>
   );
 }
 
@@ -209,6 +264,37 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     padding: 24,
     gap: 32,
+  },
+  listingCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#d1d1d6',
+    borderRadius: 12,
+    padding: 16,
+  },
+  listingCardUnset: {
+    borderColor: '#c2410c',
+    backgroundColor: '#fff7ed',
+  },
+  listingCardBody: {
+    flex: 1,
+    gap: 10,
+  },
+  listingPills: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  listingUnsetText: {
+    fontSize: 17,
+    fontWeight: '600',
+    color: '#c2410c',
+  },
+  chevron: {
+    fontSize: 28,
+    color: '#c7c7cc',
+    marginLeft: 8,
   },
   sessionInfo: {
     alignItems: 'center',

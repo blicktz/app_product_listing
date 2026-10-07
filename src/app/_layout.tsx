@@ -6,6 +6,10 @@ export default function RootLayout() {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="camera" options={{ gestureEnabled: false }} />
+        <Stack.Screen
+          name="listing-config"
+          options={{ headerShown: true, title: 'Listing Config', headerBackTitle: 'Back' }}
+        />
       </Stack>
     </GestureHandlerRootView>
   );

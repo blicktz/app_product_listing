@@ -1,5 +1,6 @@
 import Constants from 'expo-constants';
 import type { CameraTuningInfo } from '../../modules/camera-tuning';
+import type { ListingConfig } from './listingConfig';
 
 // Capture metadata uploaded next to each photo as `{sku}_{nn}.json`, for the
 // post-processing on the Mac. The crop in handleDone re-encodes the JPEG and
@@ -25,6 +26,8 @@ export type PhotoSidecar = CaptureMetadata & {
   appVersion: string | null;
   sku: string;
   filename: string;
+  /** Condition/store this SKU is listed with; also uploaded as listing.env. */
+  listing?: ListingConfig;
   /** How the uploaded JPEG was derived from the original capture. */
   processing: {
     crop: { originX: number; originY: number; width: number; height: number };
@@ -40,13 +43,15 @@ export function buildSidecar(
   sku: string,
   filename: string,
   metadata: CaptureMetadata,
-  processing: PhotoSidecar['processing']
+  processing: PhotoSidecar['processing'],
+  listing: ListingConfig | null
 ): PhotoSidecar {
   return {
     schemaVersion: 1,
     appVersion: Constants.expoConfig?.version ?? null,
     sku,
     filename,
+    ...(listing && { listing }),
     ...metadata,
     processing,
   };

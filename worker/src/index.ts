@@ -16,6 +16,8 @@ const PRESIGNED_URL_EXPIRY_SECONDS = 300;
 const SEGMENT_PATTERN = /^[A-Za-z0-9_-]+$/;
 // Photos plus their capture-metadata sidecars ({sku}_{nn}.json).
 const FILENAME_PATTERN = /^[A-Za-z0-9_-]+\.(jpg|json)$/i;
+// Per-SKU listing condition/store for the downstream listing generator.
+const LISTING_ENV_FILENAME = 'listing.env';
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -95,7 +97,10 @@ async function handlePresignUpload(request: Request, env: Env): Promise<Response
   }
 
   for (const filename of filenames) {
-    if (typeof filename !== 'string' || !FILENAME_PATTERN.test(filename)) {
+    if (
+      typeof filename !== 'string' ||
+      !(FILENAME_PATTERN.test(filename) || filename === LISTING_ENV_FILENAME)
+    ) {
       return jsonResponse({ error: `Invalid filename: ${filename}` }, 400);
     }
   }

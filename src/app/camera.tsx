@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Image,
   LayoutChangeEvent,
   Pressable,
@@ -28,6 +29,17 @@ import { CameraTuningControls } from '@/components/CameraTuningControls';
 import { useCameraTuning } from '@/lib/useCameraTuning';
 import { buildSidecar, sidecarFilename, type CaptureMetadata } from '@/lib/photoSidecar';
 import { getDeviceInfo } from '../../modules/camera-tuning';
+import { ListingPill } from '@/components/ListingPill';
+import {
+  CONDITION_COLORS,
+  CONDITION_LABELS,
+  LISTING_ENV_FILENAME,
+  STORE_COLORS,
+  buildListingEnv,
+  isEbayStore,
+  isItemCondition,
+  type ListingConfig,
+} from '@/lib/listingConfig';
 
 // Save a copy of every cropped photo to the device's camera roll. Disabled for
 // now: the R2 upload + auto-retry path has been reliable across 18k+ photos, so
@@ -68,11 +80,18 @@ const JPEG_QUALITY = 0.9;
 
 export default function CameraScreen() {
   const router = useRouter();
-  const { sku, dateRoot, startNumber } = useLocalSearchParams<{
+  const { sku, dateRoot, startNumber, itemCondition, ebayStore } = useLocalSearchParams<{
     sku: string;
     dateRoot: string;
     startNumber: string;
+    itemCondition: string;
+    ebayStore: string;
   }>();
+  // Snapshotted by Home at Start Capture, which refuses to start without both.
+  const listingConfig: ListingConfig | null =
+    isItemCondition(itemCondition) && isEbayStore(ebayStore)
+      ? { itemCondition, ebayStore }
+      : null;
   const insets = useSafeAreaInsets();
   const startingNumber = Number(startNumber) || 1;
   const existingCount = startingNumber - 1;
@@ -210,6 +229,44 @@ export default function CameraScreen() {
     uploadedFilenamesRef.current.clear();
   };
 
+  // Leave without uploading: drop the local captures and return Home without a
+  // pending action, so Home doesn't advance the SKU number.
+  const handleBack = () => {
+    if (isProcessing) {
+      return;
+    }
+    const discardAndLeave = () => {
+      for (const photo of photos) {
+        try {
+          new File(photo.uri).delete();
+        } catch {
+          // Cache file already gone; nothing to clean up.
+        }
+      }
+      router.back();
+    };
+    if (photos.length === 0) {
+      discardAndLeave();
+      return;
+    }
+    // A failed Done may have uploaded some files already; discarding can't
+    // take those back out of R2.
+    const alreadyUploaded = [...uploadedFilenamesRef.current].filter((name) =>
+      name.endsWith('.jpg')
+    ).length;
+    Alert.alert(
+      'Discard Photos?',
+      `${photos.length} photo${photos.length === 1 ? '' : 's'} will be deleted and not uploaded.` +
+        (alreadyUploaded > 0
+          ? ` ${alreadyUploaded} already uploaded on an earlier Done will stay in /${dateRoot}/${sku}/.`
+          : ''),
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Discard', style: 'destructive', onPress: discardAndLeave },
+      ]
+    );
+  };
+
   const handleDone = async () => {
     if (isProcessing || photos.length === 0) {
       return;
@@ -226,6 +283,21 @@ export default function CameraScreen() {
     sessionDir.create({ intermediates: true, idempotent: true });
 
     const preparedFiles: PreparedFile[] = [];
+
+    // Per-SKU condition/store for the listing generator (generic_bulk.py).
+    // Rewritten on every Done, so the latest session for a SKU wins.
+    if (listingConfig && !uploadedFilenamesRef.current.has(LISTING_ENV_FILENAME)) {
+      const envFile = new File(sessionDir, LISTING_ENV_FILENAME);
+      if (!envFile.exists) {
+        envFile.create();
+      }
+      envFile.write(buildListingEnv(listingConfig));
+      preparedFiles.push({
+        filename: LISTING_ENV_FILENAME,
+        localUri: envFile.uri,
+        contentType: 'text/plain',
+      });
+    }
 
     for (let index = 0; index < photos.length; index++) {
       const nn = String(startingNumber + index).padStart(2, '0');
@@ -244,7 +316,7 @@ export default function CameraScreen() {
         const sidecar = buildSidecar(sku, filename, photo.metadata, {
           crop: { originX, originY, width: size, height: size },
           output: { width: outputSize, height: outputSize, format: 'jpeg', quality: JPEG_QUALITY },
-        });
+        }, listingConfig);
         const jsonFile = new File(sessionDir, jsonFilename);
         if (!jsonFile.exists) {
           jsonFile.create();
@@ -409,6 +481,27 @@ export default function CameraScreen() {
     <CameraPermissionGate permission={permission} requestPermission={requestPermission}>
       <View style={styles.container}>
       <View style={[styles.topBar, { paddingTop: insets.top }]}>
+        <Pressable onPress={handleBack} disabled={isProcessing}>
+          <Text style={[styles.doneButtonText, isProcessing && styles.doneButtonTextDisabled]}>
+            Back
+          </Text>
+        </Pressable>
+        <View style={styles.listingChips}>
+          {listingConfig && (
+            <>
+              <ListingPill
+                size="small"
+                label={CONDITION_LABELS[listingConfig.itemCondition].toUpperCase()}
+                color={CONDITION_COLORS[listingConfig.itemCondition]}
+              />
+              <ListingPill
+                size="small"
+                label={listingConfig.ebayStore}
+                color={STORE_COLORS[listingConfig.ebayStore]}
+              />
+            </>
+          )}
+        </View>
         <Pressable onPress={handleDone} disabled={photos.length === 0 || isProcessing}>
           <Text
             style={[
@@ -514,9 +607,16 @@ const styles = StyleSheet.create({
   },
   topBar: {
     flexDirection: 'row',
-    justifyContent: 'flex-end',
+    alignItems: 'center',
+    gap: 12,
     paddingHorizontal: 16,
     paddingBottom: 12,
+  },
+  listingChips: {
+    flex: 1,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 6,
   },
   doneButtonText: {
     color: '#0a84ff',
