@@ -38,6 +38,21 @@ public class HardwareShutterModule: Module {
   public func definition() -> ModuleDefinition {
     Name("HardwareShutter")
 
+    OnCreate {
+      Self.dbg("module created")
+      let names: [Notification.Name] = [
+        AVAudioSession.interruptionNotification, AVAudioSession.routeChangeNotification,
+        AVAudioSession.mediaServicesWereResetNotification, AVAudioSession.silenceSecondaryAudioHintNotification,
+        UIApplication.didBecomeActiveNotification, UIApplication.willResignActiveNotification,
+        UIApplication.didEnterBackgroundNotification, UIApplication.willEnterForegroundNotification,
+      ]
+      for name in names {
+        self.debugObservers.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: nil) { note in
+          Self.dbg("notification \(name.rawValue) \(note.userInfo ?? [:])")
+        })
+      }
+    }
+
     Events("onShutter")
 
     Function("setMode") { (mode: String) in
@@ -54,6 +69,7 @@ public class HardwareShutterModule: Module {
   }
 
   private func apply(_ newMode: String) {
+    Self.dbg("apply \(newMode) (was \(mode)) appState=\(UIApplication.shared.applicationState.rawValue)")
     guard newMode != mode else {
       return
     }
@@ -80,6 +96,7 @@ public class HardwareShutterModule: Module {
   }
 
   private func emit(_ type: String) {
+    Self.dbg("emit \(type)")
     sendEvent("onShutter", ["type": type])
   }
 
@@ -124,7 +141,7 @@ public class HardwareShutterModule: Module {
     // Ambient + mixWithOthers leaves any playing music alone.
     let session = AVAudioSession.sharedInstance()
     try? session.setCategory(.ambient, options: [.mixWithOthers])
-    try? session.setActive(true)
+    do { try session.setActive(true) } catch { Self.dbg("setActive failed \(error)") }
 
     let volumeView = MPVolumeView(frame: CGRect(x: -2000, y: -2000, width: 100, height: 40))
     volumeView.alpha = 0.01
@@ -136,6 +153,7 @@ public class HardwareShutterModule: Module {
     resetVolume()
 
     volumeObservation = session.observe(\.outputVolume, options: [.new]) { [weak self] _, change in
+      Self.dbg("KVO \(String(describing: change.newValue))")
       guard let volume = change.newValue else {
         return
       }
@@ -198,6 +216,7 @@ public class HardwareShutterModule: Module {
   // Volume Up press changes nothing and never reaches us. Keep setting it until
   // the system volume actually lands on the resting value.
   private func resetVolume(attempt: Int = 0) {
+    Self.dbg("resetVolume attempt \(attempt)")
     guard mode == "volume" || attempt == 0, let volumeView else {
       return
     }
@@ -229,6 +248,21 @@ public class HardwareShutterModule: Module {
       }
     }
   }
+
+  // HS-DEBUG: temporary file log, readable after an icon launch.
+  static func dbg(_ message: String) {
+    let line = "\(Date().timeIntervalSince1970) [HS-DEBUG] \(message) vol=\(AVAudioSession.sharedInstance().outputVolume) cat=\(AVAudioSession.sharedInstance().category.rawValue) other=\(AVAudioSession.sharedInstance().isOtherAudioPlaying)\n"
+    NSLog("%@", line)
+    let url = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("hs-debug.log")
+    if let handle = try? FileHandle(forWritingTo: url) {
+      handle.seekToEndOfFile()
+      handle.write(line.data(using: .utf8)!)
+      try? handle.close()
+    } else {
+      try? line.data(using: .utf8)!.write(to: url)
+    }
+  }
+  private var debugObservers: [NSObjectProtocol] = []
 
   private static func keyWindow() -> UIWindow? {
     UIApplication.shared.connectedScenes
