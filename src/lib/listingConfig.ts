@@ -7,7 +7,7 @@ import { File, Paths } from 'expo-file-system';
 // Spec: docs/listing-config-requirements.md.
 
 export const ITEM_CONDITIONS = ['new', 'pre-owned'] as const;
-export const EBAY_STORES = ['foundandprofound', 'toptierpulls'] as const;
+export const EBAY_STORES = ['foundandprofound', 'toptierpulls', 'fb-mkt'] as const;
 
 export type ItemCondition = (typeof ITEM_CONDITIONS)[number];
 export type EbayStore = (typeof EBAY_STORES)[number];
@@ -35,6 +35,14 @@ export const CONDITION_COLORS: Record<ItemCondition, string> = {
 export const STORE_COLORS: Record<EbayStore, string> = {
   foundandprofound: '#7c3aed',
   toptierpulls: '#0f766e',
+  'fb-mkt': '#1877f2',
+};
+
+/** Photos allowed per SKU, matching each platform's listing photo limit. */
+export const MAX_PHOTOS_BY_STORE: Record<EbayStore, number> = {
+  foundandprofound: 24,
+  toptierpulls: 24,
+  'fb-mkt': 10,
 };
 
 export function isItemCondition(value: unknown): value is ItemCondition {

@@ -7,7 +7,9 @@ Status: requirements for implementation in the listing-generation repo (`generic
 `generic_bulk.py` takes the item condition and the eBay store from two run-wide env vars:
 
 - `GENERIC_BULK_ITEM_CONDITION` (`new | pre-owned`)
-- `GENERIC_BULK_EBAY_STORE` (`foundandprofound | toptierpulls`)
+- `GENERIC_BULK_EBAY_STORE` (`foundandprofound | toptierpulls | fb-mkt`)
+
+`fb-mkt` is Facebook Marketplace, added after the rest of this document was written. The capture app writes it under the same key, but it isn't an eBay store: the generator must accept it and must not try to upload those SKUs to eBay. Until then, its strict validation (L2) rejects any `listing.env` with this value.
 
 Both are set by hand in the Python `.env`. If one is forgotten, a whole batch is generated (and paid for) with the wrong condition or for the wrong store.
 

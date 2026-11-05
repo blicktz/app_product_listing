@@ -36,7 +36,7 @@ This view handles the core photo acquisition, designed to emulate the eBay mobil
    * **Deletion Action:** Tapping a thumbnail should immediately prompt for deletion (or delete directly) and remove the image from the current session's queue.  
 3. **Capture Button:** The primary shutter button to take a photo.  
 4. **"Done" / "Upload" Button:** A button to finalize the capture session for the current SKU and close the Camera View, returning to the Home View.
-5. **Photo Count Limit:** The session is capped at a maximum of **24 photos per SKU**, matching the eBay listing photo limit.  
+5. **Photo Count Limit:** The session is capped at a maximum of **24 photos per SKU**, matching the eBay listing photo limit. (Update: `fb-mkt` SKUs are capped at **10**, shown as `#/10`. See `MAX_PHOTOS_BY_STORE`.)  
    * **Display:** The photo counter must be shown in `#/24` format (e.g., `3/24`), replacing a plain count.  
    * **Behavior:** Once 24 photos have been captured, the capture button becomes disabled — no further photos can be taken until one is deleted from the session queue.
 

@@ -39,6 +39,7 @@ import {
   buildListingEnv,
   isEbayStore,
   isItemCondition,
+  MAX_PHOTOS_BY_STORE,
   type ListingConfig,
 } from '@/lib/listingConfig';
 
@@ -75,7 +76,8 @@ const THUMBNAIL_SIZE = 64;
 function pinchZoom(startZoom: number, scale: number) {
   return Math.min(Math.max(startZoom + (scale - 1) * 0.75, 0), 1);
 }
-const MAX_PHOTOS = 24;
+// Only used if the route params carry no valid store, which Home prevents.
+const DEFAULT_MAX_PHOTOS = 24;
 const MAX_OUTPUT_SIZE = 1600;
 const JPEG_QUALITY = 0.9;
 
@@ -93,6 +95,7 @@ export default function CameraScreen() {
     isItemCondition(itemCondition) && isEbayStore(ebayStore)
       ? { itemCondition, ebayStore }
       : null;
+  const maxPhotos = listingConfig ? MAX_PHOTOS_BY_STORE[listingConfig.ebayStore] : DEFAULT_MAX_PHOTOS;
   const insets = useSafeAreaInsets();
   const startingNumber = Number(startNumber) || 1;
   const existingCount = startingNumber - 1;
@@ -172,7 +175,7 @@ export default function CameraScreen() {
   };
 
   const handleCapture = async () => {
-    if (!isCameraReady || isProcessing || existingCount + photos.length >= MAX_PHOTOS) {
+    if (!isCameraReady || isProcessing || existingCount + photos.length >= maxPhotos) {
       return;
     }
 
@@ -576,16 +579,16 @@ export default function CameraScreen() {
 
       <View style={[styles.bottomBar, { paddingBottom: insets.bottom + 16 }]}>
         <Text style={styles.photoCount}>
-          {existingCount + photos.length}/{MAX_PHOTOS}
+          {existingCount + photos.length}/{maxPhotos}
         </Text>
         <Pressable
           style={[
             styles.shutterButton,
-            (existingCount + photos.length >= MAX_PHOTOS || isProcessing) &&
+            (existingCount + photos.length >= maxPhotos || isProcessing) &&
               styles.shutterButtonDisabled,
           ]}
           onPress={handleCapture}
-          disabled={existingCount + photos.length >= MAX_PHOTOS || isProcessing}
+          disabled={existingCount + photos.length >= maxPhotos || isProcessing}
         />
         <View style={styles.bottomBarSpacer} />
       </View>

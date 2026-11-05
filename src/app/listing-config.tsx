@@ -61,7 +61,7 @@ export default function ListingConfigScreen() {
       </View>
 
       <View style={styles.section}>
-        <Text style={styles.sectionLabel}>eBay store</Text>
+        <Text style={styles.sectionLabel}>Store</Text>
         {EBAY_STORES.map((store) => (
           <OptionRow
             key={store}
