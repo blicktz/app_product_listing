@@ -25,6 +25,8 @@ async function callWorker<T>(path: string, options: RequestInit = {}): Promise<T
 export type CheckSkuResult = {
   count: number;
   nextNumber: number;
+  /** Photo numbers already on R2. Absent from Workers deployed before the upload queue. */
+  numbers?: number[];
 };
 
 export function checkSku(date: string, sku: string): Promise<CheckSkuResult> {

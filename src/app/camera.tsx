@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  ActivityIndicator,
   Alert,
   Image,
   LayoutChangeEvent,
@@ -14,11 +13,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { CameraView, useCameraPermissions } from 'expo-camera';
-import * as MediaLibrary from 'expo-media-library';
-import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
-import { Directory, File, Paths } from 'expo-file-system';
-import { presignUpload } from '@/lib/uploadApi';
-import { sleep } from '@/lib/sleep';
+import { File } from 'expo-file-system';
 import { selectCloseFocusLens } from '@/lib/cameraLens';
 import { loadZoom, saveZoom } from '@/lib/cameraZoom';
 import { useRemoteTrigger } from '@/lib/useRemoteTrigger';
@@ -28,26 +23,21 @@ import { Toast } from '@/components/Toast';
 import { CameraPermissionGate } from '@/components/CameraPermissionGate';
 import { CameraTuningControls } from '@/components/CameraTuningControls';
 import { useCameraTuning } from '@/lib/useCameraTuning';
-import { buildSidecar, sidecarFilename, type CaptureMetadata } from '@/lib/photoSidecar';
+import type { CaptureMetadata } from '@/lib/photoSidecar';
 import { getDeviceInfo } from '../../modules/camera-tuning';
 import { ListingPill } from '@/components/ListingPill';
+import { UploadQueueBadge } from '@/components/UploadQueueBadge';
+import { enqueue, notifyCaptureActivity } from '@/lib/uploadQueue/runner';
+import { deleteJobDir, jobDir, newJobId, type UploadJob } from '@/lib/uploadQueue/store';
 import {
   CONDITION_COLORS,
   CONDITION_LABELS,
-  LISTING_ENV_FILENAME,
   STORE_COLORS,
-  buildListingEnv,
   isEbayStore,
   isItemCondition,
   MAX_PHOTOS_BY_STORE,
   type ListingConfig,
 } from '@/lib/listingConfig';
-
-// Save a copy of every cropped photo to the device's camera roll. Disabled for
-// now: the R2 upload + auto-retry path has been reliable across 18k+ photos, so
-// the local backup isn't earning its keep. Left wired up (not deleted) until
-// we're certain it can go. Flip to true to restore.
-const SAVE_TO_CAMERA_ROLL = false;
 
 // Experimental (camera-tuning-experiment branch): fixed exposure + white balance
 // via the local `modules/camera-tuning` native module, so the white backdrop
@@ -55,13 +45,6 @@ const SAVE_TO_CAMERA_ROLL = false;
 const ENABLE_CAMERA_TUNING = true;
 
 const TOAST_DURATION_MS = 3000;
-const MAX_UPLOAD_ATTEMPTS = 5;
-const UPLOAD_RETRY_BASE_DELAY_MS = 10_000; // wait before the 1st retry
-const UPLOAD_RETRY_BACKOFF_FACTOR = 1.5; // ~10s, 15s, 22s, 30s
-const UPLOAD_RETRY_MAX_DELAY_MS = 30_000; // cap
-const UPLOAD_TIMEOUT_MS = 30000;
-
-type PreparedFile = { filename: string; localUri: string; contentType: string };
 
 type SessionPhoto = {
   id: string;
@@ -78,18 +61,18 @@ function pinchZoom(startZoom: number, scale: number) {
 }
 // Only used if the route params carry no valid store, which Home prevents.
 const DEFAULT_MAX_PHOTOS = 24;
-const MAX_OUTPUT_SIZE = 1600;
-const JPEG_QUALITY = 0.9;
 
 export default function CameraScreen() {
   const router = useRouter();
-  const { sku, dateRoot, startNumber, itemCondition, ebayStore } = useLocalSearchParams<{
-    sku: string;
-    dateRoot: string;
-    startNumber: string;
-    itemCondition: string;
-    ebayStore: string;
-  }>();
+  const { sku, dateRoot, startNumber, itemCondition, ebayStore, numberedOffline } =
+    useLocalSearchParams<{
+      sku: string;
+      dateRoot: string;
+      startNumber: string;
+      itemCondition: string;
+      ebayStore: string;
+      numberedOffline?: string;
+    }>();
   // Snapshotted by Home at Start Capture, which refuses to start without both.
   const listingConfig: ListingConfig | null =
     isItemCondition(itemCondition) && isEbayStore(ebayStore)
@@ -101,19 +84,15 @@ export default function CameraScreen() {
   const existingCount = startingNumber - 1;
 
   const [permission, requestPermission] = useCameraPermissions();
-  const [mediaPermission, requestMediaPermission] = MediaLibrary.usePermissions();
   const cameraRef = useRef<CameraView>(null);
   const thumbnailStripRef = useRef<ScrollView>(null);
   const nextPhotoId = useRef(0);
-  // Filenames that uploaded OK this session. Survives re-renders and repeated
-  // Done presses so a manual retry only re-uploads what's still missing. Keyed
-  // by the position-derived filename, so it's cleared whenever photos change.
-  const uploadedFilenamesRef = useRef<Set<string>>(new Set());
+  // Synchronous latch so a double Done (tap + remote long-press) can't queue
+  // the same session twice.
+  const isFinishingRef = useRef(false);
 
   const [photos, setPhotos] = useState<SessionPhoto[]>([]);
   const [previewSize, setPreviewSize] = useState({ width: 0, height: 0 });
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [processingLabel, setProcessingLabel] = useState('');
   const [errorToast, setErrorToast] = useState<string | null>(null);
   // Restored from the last SKU so every item is framed the same.
   const [zoom, setZoom] = useState(loadZoom);
@@ -175,9 +154,11 @@ export default function CameraScreen() {
   };
 
   const handleCapture = async () => {
-    if (!isCameraReady || isProcessing || existingCount + photos.length >= maxPhotos) {
+    if (!isCameraReady || existingCount + photos.length >= maxPhotos) {
       return;
     }
+    // Hold off the upload queue's cropping work so the shutter stays snappy.
+    notifyCaptureActivity();
 
     // The session is briefly not ready right after mount and again right after
     // the lens switch in handleCameraReady. Swallow the rejection so a
@@ -213,15 +194,9 @@ export default function CameraScreen() {
         },
       },
     ]);
-    // Photo set changed: position-derived filenames no longer map to the same
-    // photos, so a partial-upload resume would be wrong. Start fresh.
-    uploadedFilenamesRef.current.clear();
   };
 
   const handleDeletePhoto = (id: string) => {
-    if (isProcessing) {
-      return;
-    }
     setPhotos((current) => {
       const target = current.find((photo) => photo.id === id);
       if (target) {
@@ -229,16 +204,11 @@ export default function CameraScreen() {
       }
       return current.filter((photo) => photo.id !== id);
     });
-    // See handleCapture: filenames are position-derived, so drop resume state.
-    uploadedFilenamesRef.current.clear();
   };
 
   // Leave without uploading: drop the local captures and return Home without a
   // pending action, so Home doesn't advance the SKU number.
   const handleBack = () => {
-    if (isProcessing) {
-      return;
-    }
     const discardAndLeave = () => {
       for (const photo of photos) {
         try {
@@ -253,17 +223,9 @@ export default function CameraScreen() {
       discardAndLeave();
       return;
     }
-    // A failed Done may have uploaded some files already; discarding can't
-    // take those back out of R2.
-    const alreadyUploaded = [...uploadedFilenamesRef.current].filter((name) =>
-      name.endsWith('.jpg')
-    ).length;
     Alert.alert(
       'Discard Photos?',
-      `${photos.length} photo${photos.length === 1 ? '' : 's'} will be deleted and not uploaded.` +
-        (alreadyUploaded > 0
-          ? ` ${alreadyUploaded} already uploaded on an earlier Done will stay in /${dateRoot}/${sku}/.`
-          : ''),
+      `${photos.length} photo${photos.length === 1 ? '' : 's'} will be deleted and not uploaded.`,
       [
         { text: 'Cancel', style: 'cancel' },
         { text: 'Discard', style: 'destructive', onPress: discardAndLeave },
@@ -271,205 +233,74 @@ export default function CameraScreen() {
     );
   };
 
-  const handleDone = async () => {
-    if (isProcessing || photos.length === 0) {
+  // Hand the session to the background upload queue and go straight back Home.
+  // The captures are copied into a durable job folder (Documents, not cache)
+  // with a manifest first; only once that's on disk are the cache originals
+  // deleted, so a failure here leaves the session intact to try again.
+  const handleDone = () => {
+    if (isFinishingRef.current || photos.length === 0) {
       return;
     }
+    isFinishingRef.current = true;
 
-    setIsProcessing(true);
+    const jobId = newJobId(sku);
+    try {
+      const dir = jobDir(jobId);
+      dir.create({ intermediates: true, idempotent: true });
 
-    let permissionToSave = mediaPermission;
-    if (SAVE_TO_CAMERA_ROLL && !permissionToSave?.granted) {
-      permissionToSave = await requestMediaPermission();
-    }
-
-    const sessionDir = new Directory(Paths.cache, 'sessions', dateRoot, sku);
-    sessionDir.create({ intermediates: true, idempotent: true });
-
-    const preparedFiles: PreparedFile[] = [];
-
-    // Per-SKU condition/store for the listing generator (generic_bulk.py).
-    // Rewritten on every Done, so the latest session for a SKU wins.
-    if (listingConfig && !uploadedFilenamesRef.current.has(LISTING_ENV_FILENAME)) {
-      const envFile = new File(sessionDir, LISTING_ENV_FILENAME);
-      if (!envFile.exists) {
-        envFile.create();
-      }
-      envFile.write(buildListingEnv(listingConfig));
-      preparedFiles.push({
-        filename: LISTING_ENV_FILENAME,
-        localUri: envFile.uri,
-        contentType: 'text/plain',
-      });
-    }
-
-    for (let index = 0; index < photos.length; index++) {
-      const nn = String(startingNumber + index).padStart(2, '0');
-      const filename = `${sku}_${nn}.jpg`;
-      const jsonFilename = sidecarFilename(filename);
-
-      const photo = photos[index];
-      const size = Math.min(photo.width, photo.height);
-      const originX = (photo.width - size) / 2;
-      const originY = (photo.height - size) / 2;
-      const outputSize = Math.min(size, MAX_OUTPUT_SIZE);
-
-      // Capture metadata sidecar ({sku}_{nn}.json) for post-processing; the
-      // crop below strips the JPEG's own EXIF.
-      if (!uploadedFilenamesRef.current.has(jsonFilename)) {
-        const sidecar = buildSidecar(sku, filename, photo.metadata, {
-          crop: { originX, originY, width: size, height: size },
-          output: { width: outputSize, height: outputSize, format: 'jpeg', quality: JPEG_QUALITY },
-        }, listingConfig);
-        const jsonFile = new File(sessionDir, jsonFilename);
-        if (!jsonFile.exists) {
-          jsonFile.create();
-        }
-        jsonFile.write(JSON.stringify(sidecar, null, 2));
-        preparedFiles.push({
-          filename: jsonFilename,
-          localUri: jsonFile.uri,
-          contentType: 'application/json',
-        });
-      }
-
-      // Already uploaded on an earlier Done press this session: skip the crop,
-      // the camera-roll save, and the re-upload.
-      if (uploadedFilenamesRef.current.has(filename)) {
-        continue;
-      }
-
-      setProcessingLabel(`Preparing photo ${index + 1} of ${photos.length}...`);
-
-      const context = ImageManipulator.manipulate(photo.uri);
-      context.crop({ originX, originY, width: size, height: size });
-      if (size > MAX_OUTPUT_SIZE) {
-        context.resize({ width: MAX_OUTPUT_SIZE, height: MAX_OUTPUT_SIZE });
-      }
-      const rendered = await context.renderAsync();
-      const cropped = await rendered.saveAsync({ format: SaveFormat.JPEG, compress: JPEG_QUALITY });
-
-      if (SAVE_TO_CAMERA_ROLL && permissionToSave?.granted) {
-        // saveToLibraryAsync is removed in SDK 57 (throws); the class-based
-        // Asset.create is its replacement.
-        await MediaLibrary.Asset.create(cropped.uri).catch(() => {});
-      }
-
-      const destination = new File(sessionDir, filename);
-      if (destination.exists) {
-        destination.delete();
-      }
-      new File(cropped.uri).copySync(destination);
-
-      preparedFiles.push({ filename, localUri: destination.uri, contentType: 'image/jpeg' });
-    }
-
-    let lastError: unknown = null;
-    // Photos only, not their .json sidecars.
-    const uploadedPhotoCount = () =>
-      [...uploadedFilenamesRef.current].filter((name) => name.endsWith('.jpg')).length;
-
-    // One pass over the still-pending files: presign them, PUT each one, and keep
-    // going past a failure so a single bad photo doesn't block the rest. Records
-    // each success in uploadedFilenamesRef and returns the files that failed.
-    const uploadPass = async (pending: PreparedFile[]): Promise<PreparedFile[]> => {
-      const { uploadUrls } = await presignUpload(
+      const job: UploadJob = {
+        id: jobId,
+        createdAt: new Date().toISOString(),
         dateRoot,
         sku,
-        pending.map((file) => file.filename)
-      );
-
-      const failed: PreparedFile[] = [];
-      for (let index = 0; index < pending.length; index++) {
-        const { filename, localUri, contentType } = pending[index];
-        setProcessingLabel(`Uploading file ${index + 1} of ${pending.length}...`);
-
-        try {
-          const uploadUrl = uploadUrls[filename];
-          if (!uploadUrl) {
-            throw new Error(`No upload URL returned for ${filename}`);
-          }
-
-          // Read the local file through expo-file-system rather than fetch():
-          // from SDK 56 the global fetch is expo/fetch, whose Response.blob()
-          // throws on native. A Uint8Array is a valid PUT body for the presigned
-          // R2 upload.
-          const body = await new File(localUri).bytes();
-
-          // Abort a PUT that stalls past the timeout so a dropped connection
-          // counts as a failed attempt instead of hanging the spinner.
-          const controller = new AbortController();
-          const timeout = setTimeout(() => controller.abort(), UPLOAD_TIMEOUT_MS);
-          let putResponse: Response;
-          try {
-            putResponse = await fetch(uploadUrl, {
-              method: 'PUT',
-              body,
-              headers: { 'Content-Type': contentType },
-              signal: controller.signal,
-            });
-          } finally {
-            clearTimeout(timeout);
-          }
-
-          if (!putResponse.ok) {
-            throw new Error(`Upload failed for ${filename} (${putResponse.status})`);
-          }
-
-          uploadedFilenamesRef.current.add(filename);
-        } catch (error) {
-          lastError = error;
-          failed.push(pending[index]);
-        }
-      }
-      return failed;
-    };
-
-    let pending = [...preparedFiles];
-    for (let attempt = 1; attempt <= MAX_UPLOAD_ATTEMPTS && pending.length > 0; attempt++) {
+        listing: listingConfig,
+        photos: photos.map((photo, index) => {
+          const number = startingNumber + index;
+          const rawFile = `raw_${String(number).padStart(2, '0')}.jpg`;
+          new File(photo.uri).copySync(new File(dir, rawFile));
+          return {
+            number,
+            rawFile,
+            width: photo.width,
+            height: photo.height,
+            metadata: photo.metadata,
+          };
+        }),
+        numberedOffline: numberedOffline === '1',
+        status: 'queued',
+        prepared: false,
+        collisionChecked: false,
+        uploaded: [],
+        attempts: 0,
+        nextAttemptAt: null,
+        lastError: null,
+        completedAt: null,
+      };
+      enqueue(job);
+    } catch (error) {
+      console.warn('Could not queue the session:', error);
       try {
-        pending = await uploadPass(pending);
-      } catch (error) {
-        // presignUpload itself failed: every file is still pending.
-        lastError = error;
+        deleteJobDir(jobId);
+      } catch {
+        // Nothing was written.
       }
-
-      if (pending.length === 0) {
-        break;
-      }
-      if (attempt < MAX_UPLOAD_ATTEMPTS) {
-        const delay = Math.min(
-          Math.round(UPLOAD_RETRY_BASE_DELAY_MS * UPLOAD_RETRY_BACKOFF_FACTOR ** (attempt - 1)),
-          UPLOAD_RETRY_MAX_DELAY_MS
-        );
-        setProcessingLabel(
-          `Upload failed — retry ${attempt + 1} of ${MAX_UPLOAD_ATTEMPTS} in ` +
-            `${Math.round(delay / 1000)}s (${pending.length} photo${
-              pending.length === 1 ? '' : 's'
-            } left)...`
-        );
-        await sleep(delay);
-      }
-    }
-
-    if (pending.length > 0) {
-      setIsProcessing(false);
-      setProcessingLabel('');
-      console.warn('Upload incomplete:', lastError);
-      setErrorToast(
-        `${uploadedPhotoCount()} of ${photos.length} uploaded. Tap Done to retry the rest.`
-      );
+      isFinishingRef.current = false;
+      setErrorToast('Could not save photos for upload. Tap Done to try again.');
       setTimeout(() => setErrorToast(null), TOAST_DURATION_MS);
       return;
     }
 
-    setIsProcessing(false);
-    setProcessingLabel('');
-    uploadedFilenamesRef.current.clear();
+    for (const photo of photos) {
+      try {
+        new File(photo.uri).delete();
+      } catch {
+        // Cache copy already gone; the queued copy is what matters.
+      }
+    }
 
     setPendingHomeAction({
-      type: 'upload-complete',
-      message: `Uploaded ${photos.length} photo(s) to /${dateRoot}/${sku}/`,
+      type: 'queued',
+      message: `Queued ${photos.length} photo${photos.length === 1 ? '' : 's'} for ${sku}`,
     });
     router.back();
   };
@@ -487,10 +318,8 @@ export default function CameraScreen() {
     <CameraPermissionGate permission={permission} requestPermission={requestPermission}>
       <View style={styles.container}>
       <View style={[styles.topBar, { paddingTop: insets.top }]}>
-        <Pressable onPress={handleBack} disabled={isProcessing}>
-          <Text style={[styles.doneButtonText, isProcessing && styles.doneButtonTextDisabled]}>
-            Back
-          </Text>
+        <Pressable onPress={handleBack}>
+          <Text style={styles.doneButtonText}>Back</Text>
         </Pressable>
         <View style={styles.listingChips}>
           {listingConfig && (
@@ -508,12 +337,9 @@ export default function CameraScreen() {
             </>
           )}
         </View>
-        <Pressable onPress={handleDone} disabled={photos.length === 0 || isProcessing}>
+        <Pressable onPress={handleDone} disabled={photos.length === 0}>
           <Text
-            style={[
-              styles.doneButtonText,
-              (photos.length === 0 || isProcessing) && styles.doneButtonTextDisabled,
-            ]}
+            style={[styles.doneButtonText, photos.length === 0 && styles.doneButtonTextDisabled]}
           >
             Done
           </Text>
@@ -547,6 +373,10 @@ export default function CameraScreen() {
             onChange={tuning.update}
           />
         )}
+        {/* Status only: tapping through to the queue would end the session. */}
+        <View style={styles.queueBadge} pointerEvents="none">
+          <UploadQueueBadge />
+        </View>
       </View>
 
       {/* Fixed-height slot reserved even when empty, so the camera preview area
@@ -565,7 +395,6 @@ export default function CameraScreen() {
                 key={photo.id}
                 style={styles.thumbnailWrapper}
                 onPress={() => handleDeletePhoto(photo.id)}
-                disabled={isProcessing}
               >
                 <Image source={{ uri: photo.uri }} style={styles.thumbnail} resizeMode="cover" />
                 <View style={styles.deleteBadge}>
@@ -584,21 +413,13 @@ export default function CameraScreen() {
         <Pressable
           style={[
             styles.shutterButton,
-            (existingCount + photos.length >= maxPhotos || isProcessing) &&
-              styles.shutterButtonDisabled,
+            existingCount + photos.length >= maxPhotos && styles.shutterButtonDisabled,
           ]}
           onPress={handleCapture}
-          disabled={existingCount + photos.length >= maxPhotos || isProcessing}
+          disabled={existingCount + photos.length >= maxPhotos}
         />
         <View style={styles.bottomBarSpacer} />
       </View>
-
-      {isProcessing && (
-        <View style={styles.processingOverlay}>
-          <ActivityIndicator size="large" color="#fff" />
-          <Text style={styles.processingText}>{processingLabel}</Text>
-        </View>
-      )}
 
       <Toast message={errorToast ?? ''} type="error" visible={errorToast !== null} />
       </View>
@@ -701,16 +522,11 @@ const styles = StyleSheet.create({
     backgroundColor: '#5b7c99',
     borderColor: 'rgba(255,255,255,0.3)',
   },
-  processingOverlay: {
-    ...StyleSheet.absoluteFill,
-    backgroundColor: 'rgba(0,0,0,0.75)',
-    justifyContent: 'center',
+  queueBadge: {
+    position: 'absolute',
+    bottom: 8,
+    left: 0,
+    right: 0,
     alignItems: 'center',
-    gap: 16,
-  },
-  processingText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
   },
 });

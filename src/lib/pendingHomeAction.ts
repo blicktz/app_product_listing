@@ -1,5 +1,5 @@
 export type PendingHomeAction =
-  | { type: 'upload-complete'; message: string }
+  | { type: 'queued'; message: string }
   | { type: 'sku-scanned'; sku: string };
 
 let pending: PendingHomeAction | null = null;

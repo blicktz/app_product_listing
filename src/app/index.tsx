@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Keyboard,
   Pressable,
   StyleSheet,
@@ -10,7 +9,11 @@ import {
   View,
 } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
+import { Paths } from 'expo-file-system';
 import { checkSku } from '@/lib/uploadApi';
+import { localMaxNumber, pendingPhotoCount } from '@/lib/uploadQueue/runner';
+import { useUploadQueue } from '@/lib/uploadQueue/useUploadQueue';
+import { UploadQueueBadge } from '@/components/UploadQueueBadge';
 import { useRemoteTrigger } from '@/lib/useRemoteTrigger';
 import { useHardwareShutter } from '@/lib/useHardwareShutter';
 import { takePendingHomeAction } from '@/lib/pendingHomeAction';
@@ -28,6 +31,9 @@ import {
 const SKU_ROW_HEIGHT = 48;
 
 const TOAST_DURATION_MS = 3000;
+// Queued photos live in Documents until R2 confirms them; warn before the
+// phone runs out of room for more.
+const LOW_DISK_BYTES = 500 * 1024 * 1024;
 
 function formatDateRoot(date: Date): string {
   const year = date.getFullYear();
@@ -48,9 +54,32 @@ function incrementTrailingNumber(sku: string): string | null {
 
 type SkuCheck = {
   sku: string;
+  /** Photos already on R2 (0 when offline). */
   count: number;
   nextNumber: number;
+  /** R2 was unreachable: nextNumber comes from this phone's queue ledger only. */
+  offline: boolean;
 };
+
+/**
+ * Next photo number for a SKU: after everything on R2 *and* everything already
+ * queued on this phone, so a second session on a SKU that's still uploading
+ * can't reuse its numbers. Offline, the phone's own history is all there is.
+ */
+async function resolveSkuCheck(dateRoot: string, sku: string): Promise<SkuCheck> {
+  const localNext = localMaxNumber(dateRoot, sku) + 1;
+  try {
+    const result = await checkSku(dateRoot, sku);
+    return {
+      sku,
+      count: result.count,
+      nextNumber: Math.max(result.nextNumber, localNext),
+      offline: false,
+    };
+  } catch {
+    return { sku, count: 0, nextNumber: localNext, offline: true };
+  }
+}
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -70,6 +99,9 @@ export default function HomeScreen() {
   const [listingConfig, setListingConfig] = useState<ListingConfig | null>(() =>
     completeListingConfig(loadListingConfigDraft())
   );
+  // Re-render as the queue changes, so the pending count stays live.
+  const { jobs: queuedJobs } = useUploadQueue();
+  const [lowDisk, setLowDisk] = useState(false);
 
   const handleSkuChange = (text: string) => {
     skuRef.current = text;
@@ -91,10 +123,15 @@ export default function HomeScreen() {
 
       // May have just changed on the listing-config screen.
       setListingConfig(completeListingConfig(loadListingConfigDraft()));
+      try {
+        setLowDisk(Paths.availableDiskSpace < LOW_DISK_BYTES);
+      } catch {
+        setLowDisk(false);
+      }
 
       const action = takePendingHomeAction();
 
-      if (action?.type === 'upload-complete') {
+      if (action?.type === 'queued') {
         setSuccessToast(action.message);
         setTimeout(() => setSuccessToast(null), TOAST_DURATION_MS);
 
@@ -117,13 +154,7 @@ export default function HomeScreen() {
     }
 
     const timer = setTimeout(() => {
-      checkSku(dateRoot, trimmedSku)
-        .then((result) => {
-          setSkuCheck({ sku: trimmedSku, ...result });
-        })
-        .catch(() => {
-          // Background check failed silently; Start Capture will retry on demand.
-        });
+      void resolveSkuCheck(dateRoot, trimmedSku).then(setSkuCheck);
     }, 500);
 
     return () => clearTimeout(timer);
@@ -140,33 +171,31 @@ export default function HomeScreen() {
     }
     isStartingCaptureRef.current = true;
 
-    let nextNumber: number;
-    if (skuCheck?.sku === trimmedSku) {
-      nextNumber = skuCheck.nextNumber;
+    // Reuse the debounced check only if it reached R2; an offline result is
+    // retried here in case the connection is back. Either way the start
+    // number is re-floored by the local ledger, which may have moved since.
+    let check: SkuCheck;
+    if (skuCheck?.sku === trimmedSku && !skuCheck.offline) {
+      check = {
+        ...skuCheck,
+        nextNumber: Math.max(skuCheck.nextNumber, localMaxNumber(dateRoot, trimmedSku) + 1),
+      };
     } else {
       setIsStartingCapture(true);
-      try {
-        const result = await checkSku(dateRoot, trimmedSku);
-        setSkuCheck({ sku: trimmedSku, ...result });
-        nextNumber = result.nextNumber;
-      } catch {
-        setIsStartingCapture(false);
-        isStartingCaptureRef.current = false;
-        Alert.alert(
-          'Could Not Verify SKU',
-          'Unable to check for existing photos. Check your connection and try again.'
-        );
-        return;
-      }
+      check = await resolveSkuCheck(dateRoot, trimmedSku);
+      setSkuCheck(check);
       setIsStartingCapture(false);
     }
+    // Offline is allowed: the upload queue re-checks R2 before sending and
+    // parks the job as a conflict rather than overwrite anything.
 
     router.push({
       pathname: '/camera',
       params: {
         sku: trimmedSku,
         dateRoot,
-        startNumber: String(nextNumber),
+        startNumber: String(check.nextNumber),
+        numberedOffline: check.offline ? '1' : '0',
         // Snapshot of what Home showed, so the session uploads exactly that.
         itemCondition: listingConfig.itemCondition,
         ebayStore: listingConfig.ebayStore,
@@ -179,7 +208,8 @@ export default function HomeScreen() {
   useRemoteTrigger({ onCapture: handleStartCapture });
   useHardwareShutter({ mode: 'volume', onCapture: handleStartCapture });
 
-  const existingCount = skuCheck?.sku === sku.trim() ? skuCheck.count : null;
+  const currentCheck = skuCheck?.sku === sku.trim() ? skuCheck : null;
+  const queuedCount = sku.trim() ? pendingPhotoCount(queuedJobs, dateRoot, sku.trim()) : 0;
 
   return (
     // A tap anywhere outside the SKU field dismisses the keyboard; React Native
@@ -188,6 +218,14 @@ export default function HomeScreen() {
       <View style={styles.sessionInfo}>
         <Text style={styles.sessionLabel}>Session folder</Text>
         <Text style={styles.sessionValue}>{dateRoot}/</Text>
+        <View style={styles.queueBadge}>
+          <UploadQueueBadge showIdle onPress={() => router.push('/upload-queue')} />
+        </View>
+        {lowDisk && (
+          <Text style={styles.warningText}>
+            Phone storage is low. Free up space so queued photos keep fitting.
+          </Text>
+        )}
       </View>
 
       <View style={styles.form}>
@@ -214,8 +252,16 @@ export default function HomeScreen() {
         {!listingConfig && (
           <Text style={styles.existingFilesText}>Set listing config first.</Text>
         )}
-        {existingCount !== null && existingCount > 0 && (
-          <Text style={styles.existingFilesText}>Existing files: {existingCount}</Text>
+        {currentCheck?.offline && (
+          <Text style={styles.existingFilesText}>
+            Offline: numbering from this phone&apos;s history ({currentCheck.nextNumber} next).
+          </Text>
+        )}
+        {((currentCheck?.count ?? 0) > 0 || queuedCount > 0) && (
+          <Text style={styles.existingFilesText}>
+            Existing files: {currentCheck?.count ?? 0}
+            {queuedCount > 0 ? ` + ${queuedCount} queued on this phone` : ''}
+          </Text>
         )}
 
         <Pressable
@@ -378,6 +424,15 @@ const styles = StyleSheet.create({
     right: 0,
     borderBottomWidth: 2,
     borderRightWidth: 2,
+  },
+  queueBadge: {
+    marginTop: 8,
+  },
+  warningText: {
+    fontSize: 13,
+    color: '#dc2626',
+    textAlign: 'center',
+    marginTop: 4,
   },
   existingFilesText: {
     fontSize: 13,

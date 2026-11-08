@@ -68,16 +68,18 @@ async function handleCheckSku(request: Request, env: Env): Promise<Response> {
   // Count photos only: each photo may also have a .json sidecar.
   const photoKeys = keys.filter((key) => /\.jpg$/i.test(key));
   const numberPattern = new RegExp(`^${sku}_(\\d+)\\.jpg$`, 'i');
-  let maxNumber = 0;
+  // Every number taken, so the app's upload queue can refuse to overwrite one.
+  const numbers: number[] = [];
   for (const key of photoKeys) {
     const filename = key.slice(prefix.length);
     const match = filename.match(numberPattern);
     if (match) {
-      maxNumber = Math.max(maxNumber, parseInt(match[1], 10));
+      numbers.push(parseInt(match[1], 10));
     }
   }
+  const maxNumber = Math.max(0, ...numbers);
 
-  return jsonResponse({ count: photoKeys.length, nextNumber: maxNumber + 1 });
+  return jsonResponse({ count: photoKeys.length, nextNumber: maxNumber + 1, numbers });
 }
 
 async function handlePresignUpload(request: Request, env: Env): Promise<Response> {
