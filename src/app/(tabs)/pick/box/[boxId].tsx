@@ -4,7 +4,7 @@ import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { PickImage } from '@/components/pick/PickImage';
 import { ScanBanner } from '@/components/pick/ScanBanner';
 import { ScanCapture } from '@/components/pick/ScanCapture';
-import { Button, Card, EmptyState, Pill, ProgressBar, Row, SectionHeader, Icon } from '@/components/pick/ui';
+import { Button, Card, EmptyState, Pill, ProgressBar, Row, SectionHeader, Icon } from '@/components/ui';
 import {
   groupColumns,
   labelSku,
@@ -14,7 +14,7 @@ import {
   type LineState,
 } from '@/lib/pick/derive';
 import { recordEvent } from '@/lib/pick/store';
-import { colors, shared, tabular, tints, type } from '@/lib/pick/theme';
+import { colors, shared, tabular, tints, type } from '@/lib/theme';
 import { usePickData } from '@/lib/pick/usePick';
 import { useScanHandler } from '@/lib/pick/useScanHandler';
 

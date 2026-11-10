@@ -1,8 +1,8 @@
 import { Image, Pressable, StyleSheet, View } from 'react-native';
 import { useRouter } from 'expo-router';
-import { Icon } from '@/components/pick/ui';
+import { Icon } from '@/components/ui';
 import { imageUri } from '@/lib/pick/images';
-import { colors } from '@/lib/pick/theme';
+import { colors } from '@/lib/theme';
 import type { PickLine } from '@/lib/pick/types';
 
 type Props = {

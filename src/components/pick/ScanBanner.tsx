@@ -1,7 +1,7 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import type { SFSymbol } from 'expo-symbols';
-import { Icon } from '@/components/pick/ui';
-import { type } from '@/lib/pick/theme';
+import { Icon } from '@/components/ui';
+import { type } from '@/lib/theme';
 import type { Banner } from '@/lib/pick/useScanHandler';
 
 const TONES: Record<Banner['tone'], { bg: string; fg: string; icon: SFSymbol }> = {

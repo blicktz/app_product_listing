@@ -1,5 +1,7 @@
 import { StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Icon } from '@/components/ui';
+import { type as textStyles } from '@/lib/theme';
 
 type ToastProps = {
   message: string;
@@ -14,14 +16,12 @@ export function Toast({ message, type, visible }: ToastProps) {
     return null;
   }
 
+  const error = type === 'error';
   return (
     <View
-      style={[
-        styles.container,
-        { top: insets.top + 12 },
-        type === 'error' ? styles.error : styles.success,
-      ]}
+      style={[styles.container, { top: insets.top + 12 }, error ? styles.error : styles.success]}
     >
+      <Icon name={error ? 'xmark.octagon.fill' : 'checkmark.circle.fill'} color="#ffffff" size={22} weight="semibold" />
       <Text style={styles.text}>{message}</Text>
     </View>
   );
@@ -30,27 +30,29 @@ export function Toast({ message, type, visible }: ToastProps) {
 const styles = StyleSheet.create({
   container: {
     position: 'absolute',
-    left: 24,
-    right: 24,
-    borderRadius: 10,
+    left: 16,
+    right: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    borderRadius: 14,
     paddingVertical: 14,
     paddingHorizontal: 16,
     shadowColor: '#000',
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
+    shadowOpacity: 0.18,
+    shadowRadius: 12,
     shadowOffset: { width: 0, height: 4 },
     elevation: 4,
   },
   success: {
-    backgroundColor: '#16a34a',
+    backgroundColor: '#248A3D',
   },
   error: {
-    backgroundColor: '#dc2626',
+    backgroundColor: '#D70015',
   },
   text: {
+    ...textStyles.headline,
     color: '#fff',
-    fontSize: 15,
-    fontWeight: '600',
-    textAlign: 'center',
+    flex: 1,
   },
 });

@@ -1,13 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import {
-  ActivityIndicator,
-  Keyboard,
-  Pressable,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+import { Keyboard, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { Paths } from 'expo-file-system';
 import { checkSku } from '@/lib/uploadApi';
@@ -19,6 +12,8 @@ import { useHardwareShutter } from '@/lib/useHardwareShutter';
 import { takePendingHomeAction } from '@/lib/pendingHomeAction';
 import { Toast } from '@/components/Toast';
 import { ListingPill } from '@/components/ListingPill';
+import { Button, Card, Icon, SectionHeader } from '@/components/ui';
+import { colors, shared, tints, type } from '@/lib/theme';
 import {
   CONDITION_COLORS,
   CONDITION_LABELS,
@@ -214,92 +209,120 @@ export default function HomeScreen() {
   return (
     // A tap anywhere outside the SKU field dismisses the keyboard; React Native
     // doesn't blur a TextInput on outside taps by itself.
-    <Pressable style={styles.container} onPress={Keyboard.dismiss} accessible={false}>
-      <View style={styles.sessionInfo}>
-        <Text style={styles.sessionLabel}>Session folder</Text>
-        <Text style={styles.sessionValue}>{dateRoot}/</Text>
-        <View style={styles.queueBadge}>
-          <UploadQueueBadge showIdle onPress={() => router.push('/upload-queue')} />
-        </View>
-        {lowDisk && (
-          <Text style={styles.warningText}>
-            Phone storage is low. Free up space so queued photos keep fitting.
-          </Text>
-        )}
-      </View>
+    <Pressable style={shared.screen} onPress={Keyboard.dismiss} accessible={false}>
+      <SafeAreaView style={styles.safe} edges={['top']}>
+        <Text style={styles.largeTitle}>Shoot</Text>
 
-      <View style={styles.form}>
-        <Text style={styles.inputLabel}>SKU</Text>
-        <View style={styles.skuRow}>
-          <TextInput
-            style={[styles.input, isFlashing && styles.inputFlash]}
-            value={sku}
-            onChangeText={handleSkuChange}
-            placeholder="Enter SKU"
-            autoCapitalize="characters"
-            autoCorrect={false}
-            returnKeyType="done"
-          />
-          <Pressable style={styles.scanButton} onPress={() => router.push('/scan')}>
-            <View style={styles.scanIcon}>
-              <View style={[styles.scanIconCorner, styles.scanIconCornerTopLeft]} />
-              <View style={[styles.scanIconCorner, styles.scanIconCornerTopRight]} />
-              <View style={[styles.scanIconCorner, styles.scanIconCornerBottomLeft]} />
-              <View style={[styles.scanIconCorner, styles.scanIconCornerBottomRight]} />
+        {/* Session */}
+        <Card>
+          <View style={styles.sessionRow}>
+            <View style={[styles.iconTile, { backgroundColor: colors.blue }]}>
+              <Icon name="folder.fill" color={colors.white} size={17} />
             </View>
-          </Pressable>
-        </View>
-        {!listingConfig && (
-          <Text style={styles.existingFilesText}>Set listing config first.</Text>
-        )}
-        {currentCheck?.offline && (
-          <Text style={styles.existingFilesText}>
-            Offline: numbering from this phone&apos;s history ({currentCheck.nextNumber} next).
-          </Text>
-        )}
-        {((currentCheck?.count ?? 0) > 0 || queuedCount > 0) && (
-          <Text style={styles.existingFilesText}>
-            Existing files: {currentCheck?.count ?? 0}
-            {queuedCount > 0 ? ` + ${queuedCount} queued on this phone` : ''}
-          </Text>
-        )}
+            <View style={styles.sessionBody}>
+              <Text style={styles.caption}>Session folder</Text>
+              <Text style={styles.sessionValue}>{dateRoot}/</Text>
+            </View>
+            <UploadQueueBadge showIdle variant="tinted" onPress={() => router.push('/upload-queue')} />
+          </View>
+          {lowDisk ? (
+            <View style={styles.warningRow}>
+              <Icon name="externaldrive.badge.exclamationmark" color={colors.red} size={18} />
+              <Text style={styles.warningText}>
+                Phone storage is low. Free up space so queued photos keep fitting.
+              </Text>
+            </View>
+          ) : null}
+        </Card>
 
-        <Pressable
-          style={[styles.startButton, !canStartCapture && styles.startButtonDisabled]}
+        {/* SKU */}
+        <SectionHeader>SKU</SectionHeader>
+        <Card style={isFlashing ? styles.cardFlash : undefined}>
+          <View style={styles.skuRow}>
+            <TextInput
+              style={styles.input}
+              value={sku}
+              onChangeText={handleSkuChange}
+              placeholder="Enter or scan SKU"
+              placeholderTextColor={colors.tertiaryLabel}
+              autoCapitalize="characters"
+              autoCorrect={false}
+              returnKeyType="done"
+            />
+            <Pressable
+              style={({ pressed }) => [styles.scanButton, { opacity: pressed ? 0.6 : 1 }]}
+              onPress={() => router.push('/scan')}
+              hitSlop={6}
+            >
+              <Icon name="barcode.viewfinder" color={colors.blue} size={24} />
+            </Pressable>
+          </View>
+        </Card>
+        <View style={styles.notes}>
+          {!listingConfig && (
+            <View style={styles.noteRow}>
+              <Icon name="exclamationmark.circle.fill" color={colors.orange} size={14} />
+              <Text style={styles.noteText}>Set listing config first.</Text>
+            </View>
+          )}
+          {currentCheck?.offline && (
+            <View style={styles.noteRow}>
+              <Icon name="wifi.slash" color={colors.orange} size={14} />
+              <Text style={styles.noteText}>
+                Offline: numbering from this phone&apos;s history ({currentCheck.nextNumber} next).
+              </Text>
+            </View>
+          )}
+          {((currentCheck?.count ?? 0) > 0 || queuedCount > 0) && (
+            <View style={styles.noteRow}>
+              <Icon name="photo.on.rectangle" color={colors.orange} size={14} />
+              <Text style={styles.noteText}>
+                Existing files: {currentCheck?.count ?? 0}
+                {queuedCount > 0 ? ` + ${queuedCount} queued on this phone` : ''}
+              </Text>
+            </View>
+          )}
+        </View>
+
+        <Button
+          label="Start Capture"
+          icon="camera.fill"
+          filled
+          large
           onPress={handleStartCapture}
           disabled={!canStartCapture}
-        >
-          {isStartingCapture ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <Text style={styles.startButtonText}>Start Capture</Text>
-          )}
-        </Pressable>
-      </View>
+          loading={isStartingCapture}
+          style={styles.startButton}
+        />
 
-      <Pressable
-        style={[styles.listingCard, !listingConfig && styles.listingCardUnset]}
-        onPress={() => router.push('/listing-config')}
-      >
-        <View style={styles.listingCardBody}>
-          <Text style={styles.sessionLabel}>Listing</Text>
-          {listingConfig ? (
-            <View style={styles.listingPills}>
-              <ListingPill
-                label={CONDITION_LABELS[listingConfig.itemCondition].toUpperCase()}
-                color={CONDITION_COLORS[listingConfig.itemCondition]}
-              />
-              <ListingPill
-                label={listingConfig.ebayStore}
-                color={STORE_COLORS[listingConfig.ebayStore]}
-              />
-            </View>
-          ) : (
-            <Text style={styles.listingUnsetText}>Not set, tap to configure</Text>
-          )}
-        </View>
-        <Text style={styles.chevron}>›</Text>
-      </Pressable>
+        {/* Listing */}
+        <SectionHeader>Listing</SectionHeader>
+        <Card style={!listingConfig ? styles.cardUnset : undefined}>
+          <Pressable
+            style={({ pressed }) => [styles.listingRow, pressed ? { backgroundColor: colors.pressed } : null]}
+            onPress={() => router.push('/listing-config')}
+          >
+            {listingConfig ? (
+              <View style={styles.listingPills}>
+                <ListingPill
+                  label={CONDITION_LABELS[listingConfig.itemCondition].toUpperCase()}
+                  color={CONDITION_COLORS[listingConfig.itemCondition]}
+                />
+                <ListingPill
+                  label={listingConfig.ebayStore}
+                  color={STORE_COLORS[listingConfig.ebayStore]}
+                />
+              </View>
+            ) : (
+              <View style={styles.listingUnset}>
+                <Icon name="exclamationmark.circle.fill" color={colors.orange} size={20} />
+                <Text style={styles.listingUnsetText}>Not set, tap to configure</Text>
+              </View>
+            )}
+            <Icon name="chevron.right" color={colors.tertiaryLabel} size={14} weight="semibold" />
+          </Pressable>
+        </Card>
+      </SafeAreaView>
 
       <Toast message={successToast ?? ''} type="success" visible={successToast !== null} />
     </Pressable>
@@ -307,151 +330,125 @@ export default function HomeScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
+  safe: {
     flex: 1,
+  },
+  largeTitle: {
+    ...type.largeTitle,
+    color: colors.label,
+    marginHorizontal: 20,
+    marginTop: 8,
+    marginBottom: 16,
+  },
+  sessionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+  },
+  iconTile: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    alignItems: 'center',
     justifyContent: 'center',
-    padding: 24,
-    gap: 32,
   },
-  listingCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#d1d1d6',
-    borderRadius: 12,
-    padding: 16,
-  },
-  listingCardUnset: {
-    borderColor: '#c2410c',
-    backgroundColor: '#fff7ed',
-  },
-  listingCardBody: {
+  sessionBody: {
     flex: 1,
-    gap: 10,
+    gap: 1,
   },
-  listingPills: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  listingUnsetText: {
-    fontSize: 17,
-    fontWeight: '600',
-    color: '#c2410c',
-  },
-  chevron: {
-    fontSize: 28,
-    color: '#c7c7cc',
-    marginLeft: 8,
-  },
-  sessionInfo: {
-    alignItems: 'center',
-    gap: 4,
-  },
-  sessionLabel: {
-    fontSize: 13,
-    color: '#8e8e93',
-    textTransform: 'uppercase',
+  caption: {
+    ...type.footnote,
+    color: colors.secondaryLabel,
   },
   sessionValue: {
-    fontSize: 20,
-    fontWeight: '600',
+    ...type.headline,
+    color: colors.label,
   },
-  form: {
-    gap: 12,
+  warningRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    backgroundColor: tints.red,
   },
-  inputLabel: {
-    fontSize: 13,
-    color: '#8e8e93',
-    textTransform: 'uppercase',
+  warningText: {
+    ...type.footnote,
+    color: colors.red,
+    flex: 1,
+  },
+  cardFlash: {
+    backgroundColor: tints.blue,
   },
   skuRow: {
     flexDirection: 'row',
+    alignItems: 'center',
+    paddingLeft: 16,
+    paddingRight: 8,
+    height: SKU_ROW_HEIGHT + 8,
     gap: 8,
   },
   input: {
     flex: 1,
-    height: SKU_ROW_HEIGHT,
-    borderWidth: 1,
-    borderColor: '#d1d1d6',
-    borderRadius: 8,
-    paddingHorizontal: 14,
-    fontSize: 17,
-  },
-  inputFlash: {
-    borderColor: '#208AEF',
-    backgroundColor: '#e6f4fe',
+    height: '100%',
+    ...type.title3,
+    fontWeight: '500',
+    color: colors.label,
   },
   scanButton: {
-    width: SKU_ROW_HEIGHT,
-    height: SKU_ROW_HEIGHT,
-    borderWidth: 1,
-    borderColor: '#d1d1d6',
-    borderRadius: 8,
-    justifyContent: 'center',
+    width: 40,
+    height: 40,
+    borderRadius: 10,
+    backgroundColor: tints.blue,
     alignItems: 'center',
+    justifyContent: 'center',
   },
-  scanIcon: {
-    width: 22,
-    height: 22,
-  },
-  scanIconCorner: {
-    position: 'absolute',
-    width: 8,
-    height: 8,
-    borderColor: '#208AEF',
-  },
-  scanIconCornerTopLeft: {
-    top: 0,
-    left: 0,
-    borderTopWidth: 2,
-    borderLeftWidth: 2,
-  },
-  scanIconCornerTopRight: {
-    top: 0,
-    right: 0,
-    borderTopWidth: 2,
-    borderRightWidth: 2,
-  },
-  scanIconCornerBottomLeft: {
-    bottom: 0,
-    left: 0,
-    borderBottomWidth: 2,
-    borderLeftWidth: 2,
-  },
-  scanIconCornerBottomRight: {
-    bottom: 0,
-    right: 0,
-    borderBottomWidth: 2,
-    borderRightWidth: 2,
-  },
-  queueBadge: {
+  notes: {
+    marginHorizontal: 32,
     marginTop: 8,
+    gap: 4,
   },
-  warningText: {
-    fontSize: 13,
-    color: '#dc2626',
-    textAlign: 'center',
-    marginTop: 4,
+  noteRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
   },
-  existingFilesText: {
-    fontSize: 13,
-    color: '#c2410c',
-    marginTop: -4,
+  noteText: {
+    ...type.footnote,
+    color: colors.orange,
+    flexShrink: 1,
   },
   startButton: {
-    backgroundColor: '#208AEF',
-    borderRadius: 8,
-    paddingVertical: 14,
+    marginHorizontal: 16,
+    marginTop: 16,
+  },
+  cardUnset: {
+    backgroundColor: tints.orange,
+  },
+  listingRow: {
+    flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 8,
+    minHeight: 60,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    gap: 12,
   },
-  startButtonDisabled: {
-    backgroundColor: '#b7d9f9',
+  listingPills: {
+    flex: 1,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
   },
-  startButtonText: {
-    color: '#fff',
-    fontSize: 17,
-    fontWeight: '600',
+  listingUnset: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  listingUnsetText: {
+    ...type.headline,
+    color: colors.orange,
   },
 });

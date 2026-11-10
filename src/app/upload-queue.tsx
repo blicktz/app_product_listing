@@ -1,6 +1,19 @@
 import { useEffect, useState } from 'react';
-import { Alert, Image, Pressable, SectionList, StyleSheet, Text, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Alert,
+  Image,
+  Pressable,
+  SectionList,
+  StyleSheet,
+  Text,
+  View,
+  type ColorValue,
+} from 'react-native';
 import { Stack } from 'expo-router';
+import type { SFSymbol } from 'expo-symbols';
+import { Button, EmptyState, Icon, SectionFooter, SectionHeader } from '@/components/ui';
+import { colors, shared, tabular, tints, type } from '@/lib/theme';
 import { useUploadQueue } from '@/lib/uploadQueue/useUploadQueue';
 import {
   clearCompleted,
@@ -145,52 +158,82 @@ export default function UploadQueueScreen() {
     const thumb = job.status === 'done' ? null : firstThumbnailUri(job);
     const needsAttention = job.status === 'failed' || job.status === 'conflict';
     const busy = busyJobId === job.id;
+    const look = STATUS_LOOK[job.status];
     return (
-      <View style={[styles.card, needsAttention && styles.cardAttention]}>
+      <View style={[shared.card, styles.card]}>
         <View style={styles.cardRow}>
           {thumb ? (
             <Image source={{ uri: thumb }} style={styles.thumb} />
           ) : (
             <View style={[styles.thumb, styles.thumbPlaceholder]}>
-              <Text style={styles.thumbPlaceholderText}>{job.status === 'done' ? '✓' : '…'}</Text>
+              <Icon
+                name={job.status === 'done' ? 'checkmark.circle.fill' : 'photo'}
+                color={job.status === 'done' ? colors.green : colors.tertiaryLabel}
+                size={24}
+              />
             </View>
           )}
           <View style={styles.cardBody}>
-            <Text style={styles.sku}>
+            <Text style={styles.sku} numberOfLines={1}>
               {job.sku} <Text style={styles.range}>{photoRange(job)}</Text>
             </Text>
-            <Text style={styles.meta}>
-              {job.dateRoot} · {STATUS_LABELS[job.status]}
-              {job.id === activeJobId ? ' ●' : ''}
+            <View style={styles.statusRow}>
+              {job.id === activeJobId ? (
+                <ActivityIndicator size="small" />
+              ) : (
+                <Icon name={look.icon} color={look.color} size={15} weight="semibold" />
+              )}
+              <Text style={[styles.status, { color: look.color }]}>{STATUS_LABELS[job.status]}</Text>
+            </View>
+            <Text style={[styles.meta, tabular]}>
+              {job.dateRoot} · {statusDetail(job, now, online)}
               {job.numberedOffline ? ' · numbered offline' : ''}
             </Text>
-            <Text style={styles.meta}>{statusDetail(job, now, online)}</Text>
-            {job.lastError && job.status !== 'done' && (
-              <Text style={styles.error} numberOfLines={3}>
-                {job.lastError}
-              </Text>
-            )}
           </View>
         </View>
+        {job.lastError && job.status !== 'done' && (
+          <View style={styles.errorBox}>
+            <Text style={styles.error} numberOfLines={3}>
+              {job.lastError}
+            </Text>
+          </View>
+        )}
         {(needsAttention || job.status === 'waiting-retry') && (
           <View style={styles.actions}>
             {job.status === 'conflict' ? (
-              <ActionButton label="Renumber" onPress={() => handleRenumber(job)} disabled={busy} />
+              <Button
+                label="Renumber"
+                icon="number"
+                onPress={() => handleRenumber(job)}
+                disabled={busy}
+                style={styles.action}
+              />
             ) : (
-              <ActionButton label="Retry now" onPress={() => retry(job.id)} disabled={busy} />
+              <Button
+                label="Retry now"
+                icon="arrow.clockwise"
+                onPress={() => retry(job.id)}
+                disabled={busy}
+                style={styles.action}
+              />
             )}
             {needsAttention && (
               <>
-                <ActionButton
+                <Button
                   label="Save to Photos"
+                  icon="square.and.arrow.down"
+                  tone="neutral"
                   onPress={() => handleSaveToPhotos(job)}
                   disabled={busy}
+                  style={styles.action}
                 />
-                <ActionButton
+                <Button
                   label="Delete"
-                  destructive
+                  icon="trash"
+                  tone="red"
                   onPress={() => handleDelete(job)}
                   disabled={busy}
+                  style={styles.action}
                 />
               </>
             )}
@@ -217,32 +260,43 @@ export default function UploadQueueScreen() {
         }}
       />
       <SectionList
-        style={styles.list}
+        style={shared.screen}
+        contentInsetAdjustmentBehavior="automatic"
         contentContainerStyle={styles.listContent}
         sections={sections}
         keyExtractor={(job) => job.id}
         renderItem={renderJob}
         renderSectionHeader={({ section }) => (
-          <Text style={styles.sectionTitle}>
-            {section.title} ({section.data.length})
-          </Text>
+          <SectionHeader color={section.title === 'Needs attention' ? colors.red : undefined}>
+            {section.title} · {section.data.length}
+          </SectionHeader>
         )}
         stickySectionHeadersEnabled={false}
         ListHeaderComponent={
           online === false ? (
-            <Text style={styles.offlineBanner}>
-              Offline. Photos are safe on this phone and will upload when the network returns.
-            </Text>
+            <View style={[shared.card, styles.offline]}>
+              <Icon name="wifi.slash" color={colors.orange} size={20} />
+              <Text style={styles.offlineText}>
+                Offline. Photos are safe on this phone and will upload when the network returns.
+              </Text>
+            </View>
           ) : null
         }
-        ListEmptyComponent={<Text style={styles.empty}>Nothing waiting. Everything is on R2.</Text>}
+        ListEmptyComponent={
+          <EmptyState
+            icon="checkmark.icloud.fill"
+            iconColor={colors.green}
+            title="Nothing waiting"
+            message="Everything is on R2."
+          />
+        }
         ListFooterComponent={
           jobs.length > 0 ? (
-            <Text style={styles.footer}>
+            <SectionFooter>
               Queued photos are kept in the app&apos;s folder until R2 confirms them. You can
               also reach them in the Files app under On My iPhone › product_listings ›
               upload-queue.
-            </Text>
+            </SectionFooter>
           ) : null
         }
       />
@@ -250,142 +304,101 @@ export default function UploadQueueScreen() {
   );
 }
 
-function ActionButton({
-  label,
-  onPress,
-  disabled,
-  destructive,
-}: {
-  label: string;
-  onPress: () => void;
-  disabled?: boolean;
-  destructive?: boolean;
-}) {
-  return (
-    <Pressable
-      onPress={onPress}
-      disabled={disabled}
-      style={[styles.actionButton, disabled && styles.actionButtonDisabled]}
-    >
-      <Text style={[styles.actionText, destructive && styles.actionTextDestructive]}>{label}</Text>
-    </Pressable>
-  );
-}
+const STATUS_LOOK: Record<UploadJob['status'], { icon: SFSymbol; color: ColorValue }> = {
+  queued: { icon: 'clock', color: colors.secondaryLabel },
+  preparing: { icon: 'gearshape.fill', color: colors.blue },
+  uploading: { icon: 'arrow.up.circle.fill', color: colors.blue },
+  'waiting-retry': { icon: 'arrow.clockwise.circle.fill', color: colors.orange },
+  failed: { icon: 'exclamationmark.circle.fill', color: colors.red },
+  conflict: { icon: 'exclamationmark.triangle.fill', color: colors.red },
+  done: { icon: 'checkmark.circle.fill', color: colors.green },
+};
 
 const styles = StyleSheet.create({
-  list: {
-    flex: 1,
-  },
   listContent: {
-    padding: 16,
-    gap: 10,
+    paddingBottom: 40,
   },
   headerButton: {
-    color: '#0a84ff',
-    fontSize: 17,
+    ...type.body,
+    color: colors.blue,
   },
-  offlineBanner: {
-    backgroundColor: '#fff7ed',
-    borderColor: '#d97706',
-    borderWidth: 1,
-    borderRadius: 8,
-    padding: 12,
-    color: '#9a3412',
-    fontSize: 14,
-    marginBottom: 6,
+  offline: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginTop: 12,
+    padding: 14,
+    backgroundColor: tints.orange,
   },
-  sectionTitle: {
-    fontSize: 13,
-    color: '#8e8e93',
-    textTransform: 'uppercase',
-    marginTop: 10,
-    marginBottom: 2,
+  offlineText: {
+    ...type.subheadline,
+    color: colors.label,
+    flex: 1,
   },
   card: {
-    borderWidth: 1,
-    borderColor: '#d1d1d6',
-    borderRadius: 12,
     padding: 12,
     gap: 10,
-  },
-  cardAttention: {
-    borderColor: '#dc2626',
-    backgroundColor: '#fef2f2',
+    marginBottom: 10,
   },
   cardRow: {
     flexDirection: 'row',
+    alignItems: 'center',
     gap: 12,
   },
   thumb: {
-    width: 56,
-    height: 56,
-    borderRadius: 6,
+    width: 60,
+    height: 60,
+    borderRadius: 8,
   },
   thumbPlaceholder: {
-    backgroundColor: '#f2f2f7',
+    backgroundColor: colors.fill,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  thumbPlaceholderText: {
-    fontSize: 20,
-    color: '#8e8e93',
-  },
   cardBody: {
     flex: 1,
-    gap: 2,
+    gap: 3,
   },
   sku: {
-    fontSize: 17,
-    fontWeight: '600',
+    ...type.headline,
+    color: colors.label,
   },
   range: {
-    fontSize: 14,
+    ...type.subheadline,
     fontWeight: '400',
-    color: '#8e8e93',
+    color: colors.secondaryLabel,
+  },
+  statusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  status: {
+    ...type.subheadline,
+    fontWeight: '600',
   },
   meta: {
-    fontSize: 13,
-    color: '#636366',
+    ...type.footnote,
+    color: colors.secondaryLabel,
+  },
+  errorBox: {
+    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    backgroundColor: tints.red,
   },
   error: {
-    fontSize: 13,
-    color: '#dc2626',
-    marginTop: 2,
+    ...type.footnote,
+    color: colors.red,
   },
   actions: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
   },
-  actionButton: {
-    borderWidth: 1,
-    borderColor: '#d1d1d6',
-    borderRadius: 8,
+  action: {
+    flexGrow: 1,
+    minHeight: 40,
     paddingHorizontal: 12,
-    paddingVertical: 8,
-    backgroundColor: '#fff',
-  },
-  actionButtonDisabled: {
-    opacity: 0.4,
-  },
-  actionText: {
-    color: '#0a84ff',
-    fontSize: 15,
-    fontWeight: '600',
-  },
-  actionTextDestructive: {
-    color: '#dc2626',
-  },
-  empty: {
-    textAlign: 'center',
-    color: '#8e8e93',
-    marginTop: 40,
-    fontSize: 15,
-  },
-  footer: {
-    fontSize: 12,
-    color: '#8e8e93',
-    marginTop: 16,
-    lineHeight: 17,
   },
 });

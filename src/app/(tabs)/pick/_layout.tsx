@@ -1,5 +1,5 @@
 import { Stack } from 'expo-router';
-import { colors } from '@/lib/pick/theme';
+import { colors } from '@/lib/theme';
 
 export default function PickLayout() {
   return (

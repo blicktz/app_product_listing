@@ -1,6 +1,8 @@
 import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet } from 'react-native';
 import { ListingPill } from '@/components/ListingPill';
+import { Card, Icon, SectionFooter, SectionHeader } from '@/components/ui';
+import { colors, shared } from '@/lib/theme';
 import {
   CONDITION_COLORS,
   CONDITION_LABELS,
@@ -19,13 +21,18 @@ type OptionRowProps = {
   onPress: () => void;
 };
 
+// iOS single-choice list row: the option on the left, a checkmark on the
+// selected one (like Settings).
 function OptionRow({ label, color, selected, onPress }: OptionRowProps) {
   return (
-    <Pressable style={[styles.row, selected && styles.rowSelected]} onPress={onPress}>
-      <View style={[styles.radio, selected && styles.radioSelected]}>
-        {selected && <View style={styles.radioDot} />}
-      </View>
+    <Pressable
+      style={({ pressed }) => [styles.row, pressed ? { backgroundColor: colors.pressed } : null]}
+      onPress={onPress}
+      accessibilityRole="radio"
+      accessibilityState={{ selected }}
+    >
       <ListingPill label={label} color={color} />
+      {selected ? <Icon name="checkmark" color={colors.blue} size={18} weight="semibold" /> : null}
     </Pressable>
   );
 }
@@ -41,14 +48,13 @@ export default function ListingConfigScreen() {
   };
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
-      <Text style={styles.helpText}>
-        Applies to every SKU you upload until you change it. Uploaded with each SKU as
-        listing.env for the listing generator.
-      </Text>
-
-      <View style={styles.section}>
-        <Text style={styles.sectionLabel}>Item condition</Text>
+    <ScrollView
+      style={shared.screen}
+      contentInsetAdjustmentBehavior="automatic"
+      contentContainerStyle={styles.container}
+    >
+      <SectionHeader>Item condition</SectionHeader>
+      <Card>
         {ITEM_CONDITIONS.map((condition) => (
           <OptionRow
             key={condition}
@@ -58,10 +64,10 @@ export default function ListingConfigScreen() {
             onPress={() => update({ itemCondition: condition })}
           />
         ))}
-      </View>
+      </Card>
 
-      <View style={styles.section}>
-        <Text style={styles.sectionLabel}>Store</Text>
+      <SectionHeader>Store</SectionHeader>
+      <Card>
         {EBAY_STORES.map((store) => (
           <OptionRow
             key={store}
@@ -71,58 +77,25 @@ export default function ListingConfigScreen() {
             onPress={() => update({ ebayStore: store })}
           />
         ))}
-      </View>
+      </Card>
+      <SectionFooter>
+        Applies to every SKU you upload until you change it. Uploaded with each SKU as
+        listing.env for the listing generator.
+      </SectionFooter>
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    padding: 24,
-    gap: 28,
-  },
-  helpText: {
-    fontSize: 15,
-    color: '#6b6b70',
-  },
-  section: {
-    gap: 10,
-  },
-  sectionLabel: {
-    fontSize: 13,
-    color: '#8e8e93',
-    textTransform: 'uppercase',
+    paddingBottom: 40,
   },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 14,
-    minHeight: 56,
-    paddingHorizontal: 14,
-    borderWidth: 1,
-    borderColor: '#d1d1d6',
-    borderRadius: 8,
-  },
-  rowSelected: {
-    borderColor: '#208AEF',
-    backgroundColor: '#e6f4fe',
-  },
-  radio: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    borderWidth: 2,
-    borderColor: '#c7c7cc',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  radioSelected: {
-    borderColor: '#208AEF',
-  },
-  radioDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: '#208AEF',
+    justifyContent: 'space-between',
+    minHeight: 60,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
   },
 });

@@ -1,9 +1,9 @@
 import { Children, Fragment, isValidElement, type ReactNode } from 'react';
-import { Pressable, StyleSheet, Text, View, type ColorValue, type ViewStyle } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Text, View, type ColorValue, type ViewStyle } from 'react-native';
 import { SymbolView, type SFSymbol } from 'expo-symbols';
 import { Host, ProgressView } from '@expo/ui/swift-ui';
 import { tint } from '@expo/ui/swift-ui/modifiers';
-import { colors, shared, tabular, tints, type } from '@/lib/pick/theme';
+import { colors, shared, tabular, tints, type } from '@/lib/theme';
 
 // Small building blocks for iOS "inset grouped" screens.
 
@@ -113,6 +113,9 @@ export function Button({
   onPress,
   tone = 'blue',
   filled = false,
+  disabled = false,
+  loading = false,
+  large = false,
   style,
 }: {
   label: string;
@@ -120,6 +123,11 @@ export function Button({
   onPress: () => void;
   tone?: ButtonTone;
   filled?: boolean;
+  disabled?: boolean;
+  /** Spinner in place of the label. */
+  loading?: boolean;
+  /** Primary call-to-action height (50 pt). */
+  large?: boolean;
   style?: ViewStyle;
 }) {
   const fg = tone === 'red' ? colors.red : tone === 'neutral' ? colors.label : colors.blue;
@@ -136,10 +144,22 @@ export function Button({
   return (
     <Pressable
       onPress={onPress}
-      style={({ pressed }) => [styles.button, { backgroundColor: bg, opacity: pressed ? 0.6 : 1 }, style]}
+      disabled={disabled}
+      style={({ pressed }) => [
+        styles.button,
+        large ? styles.buttonLarge : null,
+        { backgroundColor: bg, opacity: disabled ? 0.4 : pressed ? 0.6 : 1 },
+        style,
+      ]}
     >
-      {icon ? <Icon name={icon} color={textColor} size={17} weight="semibold" /> : null}
-      <Text style={[styles.buttonText, { color: textColor }]}>{label}</Text>
+      {loading ? (
+        <ActivityIndicator color={textColor} />
+      ) : (
+        <>
+          {icon ? <Icon name={icon} color={textColor} size={large ? 19 : 17} weight="semibold" /> : null}
+          <Text style={[styles.buttonText, { color: textColor }]}>{label}</Text>
+        </>
+      )}
     </Pressable>
   );
 }
@@ -221,6 +241,10 @@ const styles = StyleSheet.create({
     minHeight: 44,
     paddingHorizontal: 16,
     borderRadius: 10,
+  },
+  buttonLarge: {
+    minHeight: 50,
+    borderRadius: 12,
   },
   buttonText: {
     ...type.headline,
