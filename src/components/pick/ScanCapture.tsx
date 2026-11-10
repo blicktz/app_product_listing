@@ -19,9 +19,12 @@ type Props = {
   enabled?: boolean;
 };
 
+// The input is uncontrolled: iOS owns its text. A controlled value is echoed
+// back from JS, and while JS is busy (a pick, a screen opening) the echo can
+// carry stale text and drop keystrokes mid-scan, so a long label arrives
+// garbled and only a second scan works.
 export function ScanCapture({ onScan, enabled = true }: Props) {
   const inputRef = useRef<TextInput>(null);
-  const [value, setValue] = useState('');
   const bufferRef = useRef('');
   const idleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [screenFocused, setScreenFocused] = useState(false);
@@ -54,14 +57,15 @@ export function ScanCapture({ onScan, enabled = true }: Props) {
     return () => clearInterval(timer);
   }, [active]);
 
-  const submit = () => {
+  /** @param nativeText the field's full text at Enter, straight from iOS. */
+  const submit = (nativeText?: string) => {
     if (idleTimer.current) {
       clearTimeout(idleTimer.current);
       idleTimer.current = null;
     }
-    const code = normalizeScan(bufferRef.current);
+    const code = normalizeScan(nativeText ?? bufferRef.current);
     bufferRef.current = '';
-    setValue('');
+    inputRef.current?.clear();
     if (code.length >= 2) {
       onScanRef.current(code);
     }
@@ -69,20 +73,18 @@ export function ScanCapture({ onScan, enabled = true }: Props) {
 
   const handleChange = (text: string) => {
     bufferRef.current = text;
-    setValue(text);
     if (idleTimer.current) {
       clearTimeout(idleTimer.current);
     }
-    idleTimer.current = setTimeout(submit, IDLE_SUBMIT_MS);
+    idleTimer.current = setTimeout(() => submit(), IDLE_SUBMIT_MS);
   };
 
   return (
     <TextInput
       ref={inputRef}
       style={styles.hidden}
-      value={value}
       onChangeText={handleChange}
-      onSubmitEditing={submit}
+      onSubmitEditing={(e) => submit(e.nativeEvent.text)}
       submitBehavior="submit"
       showSoftInputOnFocus={false}
       // An ASCII keyboard keeps a Chinese (pinyin) input method from catching

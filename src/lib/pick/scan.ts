@@ -1,9 +1,10 @@
+import { isStorageLabel, salvageStorageLabel, sameBoxLabel } from './boxLabel';
 import { isDone, labelSku, type LineState } from './derive';
 
 // Decides what a scan means. Pure, so the screens only render the outcome.
 
 export function normalizeScan(raw: string): string {
-  return raw.replace(/[\r\n\t]/g, '').trim().toUpperCase();
+  return salvageStorageLabel(raw.replace(/[\r\n\t]/g, '').trim().toUpperCase());
 }
 
 // PREFIX-MMDD-NNN, plus the legacy forms inventory_sync.parse_sku accepts.
@@ -21,10 +22,10 @@ export function classifyScan(
       return 'item';
     }
   }
-  if (knownBoxes.has(code)) {
+  if (isStorageLabel(code) || knownBoxes.has(code)) {
     return 'box';
   }
-  // Box labels are short (AAC-3, FRE-001); anything shaped like a SKU is an item.
+  // Old box labels are short (AAC-3, FRE-001); anything shaped like a SKU is an item.
   return SKU_PATTERN.test(code) ? 'item' : 'box';
 }
 
@@ -36,8 +37,12 @@ export type ItemScanResult =
   | { kind: 'already-picked'; code: string }
   | { kind: 'not-on-list'; code: string };
 
+// Sub-boxes share their parent's label (T-3-1 is in ST-GAR-TTT-003), so an
+// item listed in either counts as in the open box.
 function inBox(state: LineState, boxId: string): boolean {
-  return state.line.box_id === boxId || (state.line.other_boxes ?? []).includes(boxId);
+  return [state.line.box_id, ...(state.line.other_boxes ?? [])].some(
+    (listed) => listed !== null && sameBoxLabel(listed, boxId)
+  );
 }
 
 /**

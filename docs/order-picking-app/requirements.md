@@ -245,7 +245,14 @@ Scanning a box label on any Pick screen opens that box.
 - The phone camera is a fallback only.
 - Barcodes in use:
   - **Item label** = the SKU (e.g. `AAO-0811-024`).
-  - **Box label** = the box ID (e.g. `AAC-3`, `TTT-11`).
+  - **Box label** = `ST-<room>-<column>-<box>`: a 3-letter room code (`GAR` garage, `SHD` shed), a 3-letter column, then a 3-digit box number (e.g. `ST-GAR-AAC-001`, `ST-SHD-ABA-002`).
+    - The inventory (and the server's `box_id`) still uses older short IDs. The app converts each one to its printed label, using the `room` the server sends with the box, before comparing it with a scan:
+      - A single-letter column becomes three of that letter, with or without a dash: `A-1` → `ST-GAR-AAA-001`, `Q1` → `ST-GAR-QQQ-001`.
+      - A 3-letter column stays as it is: `AAB-10` → `ST-GAR-AAB-010`, `FRE-001` → `ST-GAR-FRE-001`.
+      - The box number is padded to 3 digits.
+      - Extra dashes are ignored: `K--7` → `ST-GAR-KKK-007`.
+      - A sub-box shares its parent's label: `T-3-1`, `T-3-2` → `ST-GAR-TTT-003`.
+    - Scanning the old ID typed by hand also still works.
 
 ## Picking flow
 1. **Load** the pick list from the Mac (pull-to-refresh). Show when it was loaded, the number of orders, items and boxes, and items **not yet picked**.

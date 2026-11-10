@@ -13,6 +13,7 @@ import {
   shortStore,
   type LineState,
 } from '@/lib/pick/derive';
+import { boxLabel } from '@/lib/pick/boxLabel';
 import { recordEvent } from '@/lib/pick/store';
 import { colors, shared, tabular, tints, type } from '@/lib/theme';
 import { usePickData } from '@/lib/pick/usePick';
@@ -52,6 +53,7 @@ export default function BoxScreen() {
   const boxId = String(rawBoxId ?? '').toUpperCase();
   const { boxes } = usePickData();
   const box = boxes.get(boxId);
+  const label = boxLabel(boxId, box?.room ?? null);
   const [flash, setFlash] = useState(false);
   const { banner, dismiss, handleScan, confirmManual } = useScanHandler({
     boxId,
@@ -182,10 +184,13 @@ export default function BoxScreen() {
                 <Card style={styles.firstCard}>
                   <View style={styles.summary}>
                     <View style={styles.summaryTop}>
-                      <Text style={styles.summaryTitle}>
-                        Column {box.column}
-                        {box.room ? ` · ${box.room}` : ''}
-                      </Text>
+                      <View style={styles.summaryLeft}>
+                        <Text style={styles.summaryTitle}>
+                          Column {box.column}
+                          {box.room ? ` · ${box.room}` : ''}
+                        </Text>
+                        {label ? <Text style={[styles.summaryLabel, tabular]}>Label {label}</Text> : null}
+                      </View>
                       <Text style={[styles.summaryRight, tabular]}>
                         {box.pickedQty} of {box.totalQty} picked
                       </Text>
@@ -327,7 +332,15 @@ const styles = StyleSheet.create({
   },
   summaryTop: {
     flexDirection: 'row',
-    alignItems: 'baseline',
+    alignItems: 'center',
+  },
+  summaryLeft: {
+    flexShrink: 1,
+    gap: 2,
+  },
+  summaryLabel: {
+    ...type.footnote,
+    color: colors.secondaryLabel,
   },
   summaryTitle: {
     ...type.headline,

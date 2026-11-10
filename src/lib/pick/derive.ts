@@ -1,3 +1,4 @@
+import { boxLabel } from './boxLabel';
 import type { PickEvent, PickLine, ServerLineStatus } from './types';
 
 // Pure derivations: what the screens show, computed from the last pick list
@@ -42,8 +43,16 @@ export function labelSku(sku: string): string {
   return (colon >= 0 ? sku.slice(colon + 1) : sku).trim().toUpperCase();
 }
 
-/** Boxes of one prefix stand stacked in one warehouse column: AAC-3 → AAC. */
+/**
+ * Boxes of one prefix stand stacked in one warehouse column. Taken from the
+ * printed label so old and standard IDs group together:
+ * A-1 and ST-GAR-AAA-002 → AAA, AAC-3 → AAC.
+ */
 export function boxColumn(boxId: string): string {
+  const label = boxLabel(boxId);
+  if (label) {
+    return label.split('-')[2];
+  }
   const dash = boxId.lastIndexOf('-');
   return dash > 0 ? boxId.slice(0, dash) : boxId;
 }
@@ -66,9 +75,9 @@ export function shortDate(date: string): string {
   return date.length >= 10 ? date.slice(5, 10) : date;
 }
 
-/** Natural order: AAC-3 before AAC-12. */
+/** Natural order by printed label: AAC-3 before AAC-12, A-1 before ST-GAR-AAA-002. */
 export function compareBoxIds(a: string, b: string): number {
-  return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
+  return (boxLabel(a) ?? a).localeCompare(boxLabel(b) ?? b, undefined, { numeric: true, sensitivity: 'base' });
 }
 
 /**
@@ -213,21 +222,4 @@ export function groupColumns(boxes: Map<string, BoxGroup>): {
     }));
   done.sort((a, b) => compareBoxIds(a.boxId, b.boxId));
   return { columns, done };
-}
-
-/** Every box ID the list mentions, so a scanned label can be told from a SKU. */
-export function knownBoxIds(lines: PickLine[]): Set<string> {
-  const ids = new Set<string>();
-  for (const line of lines) {
-    if (line.box_id) {
-      ids.add(line.box_id.toUpperCase());
-    }
-    for (const box of line.other_boxes ?? []) {
-      ids.add(box.toUpperCase());
-    }
-    for (const nearby of line.nearby_boxes ?? []) {
-      ids.add(nearby.box_id.toUpperCase());
-    }
-  }
-  return ids;
 }

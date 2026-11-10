@@ -1,5 +1,6 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import type { SFSymbol } from 'expo-symbols';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Icon } from '@/components/ui';
 import { type } from '@/lib/theme';
 import type { Banner } from '@/lib/pick/useScanHandler';
@@ -10,14 +11,23 @@ const TONES: Record<Banner['tone'], { bg: string; fg: string; icon: SFSymbol }> 
   error: { bg: '#D70015', fg: '#ffffff', icon: 'xmark.octagon.fill' },
 };
 
-/** Floating scan result, overlaid at the top of the screen's content. */
+/** Standard iOS navigation bar, below the status bar. */
+const NAV_BAR_HEIGHT = 44;
+
+/**
+ * Floating scan result at the top of the screen. The Pick screens draw from the
+ * very top of the display, and the navigation bar's buttons are native views
+ * drawn above anything here, so it sits below the status bar and the bar.
+ * It covers the large title while shown.
+ */
 export function ScanBanner({ banner, onDismiss }: { banner: Banner | null; onDismiss: () => void }) {
+  const insets = useSafeAreaInsets();
   if (!banner) {
     return null;
   }
   const tone = TONES[banner.tone];
   return (
-    <View style={styles.wrap} pointerEvents="box-none">
+    <View style={[styles.wrap, { top: insets.top + NAV_BAR_HEIGHT + 8 }]} pointerEvents="box-none">
       <Pressable
         style={[styles.banner, { backgroundColor: tone.bg }]}
         onPress={banner.actions ? undefined : onDismiss}
@@ -56,7 +66,6 @@ export function ScanBanner({ banner, onDismiss }: { banner: Banner | null; onDis
 const styles = StyleSheet.create({
   wrap: {
     position: 'absolute',
-    top: 8,
     left: 12,
     right: 12,
     zIndex: 10,

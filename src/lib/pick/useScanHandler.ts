@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'expo-router';
-import { groupBoxes, knownBoxIds, labelSku, type LineState } from './derive';
+import { boxScanIndex } from './boxLabel';
+import { groupBoxes, labelSku, type LineState } from './derive';
 import { feedbackError, feedbackSuccess, feedbackWarning, preparePickFeedback } from './feedback';
 import { classifyScan, resolveItemScan } from './scan';
 import { currentLineStates, getSnapshot, recordEvent } from './store';
@@ -93,8 +94,12 @@ export function useScanHandler({
     const snap = getSnapshot();
     const states = currentLineStates();
 
-    if (classifyScan(code, states.values(), knownBoxIds(snap.list?.lines ?? [])) === 'box') {
-      if (code === boxId) {
+    const boxIndex = boxScanIndex(snap.list?.lines ?? []);
+    if (classifyScan(code, states.values(), new Set(boxIndex.keys())) === 'box') {
+      // A printed label (ST-GAR-AAA-001) stands for the inventory ID (A-1),
+      // or for a box and its sub-boxes (T-3, T-3-1, T-3-2).
+      const targets = boxIndex.get(code) ?? [code];
+      if (boxId && targets.includes(boxId)) {
         return;
       }
       if (!allowBoxScan) {
@@ -102,14 +107,17 @@ export function useScanHandler({
         show({ tone: 'warning', title: `Close the photo to open ${code}` });
         return;
       }
-      const box = groupBoxes(states.values()).get(code);
-      if (!box) {
+      const boxes = groupBoxes(states.values());
+      const target = targets.find((id) => boxes.has(id));
+      if (!target) {
         feedbackWarning();
+        // Logged with the exact text received, to trace misread labels.
+        recordEvent({ action: 'reject', boxId, scannedValue: code, note: 'box not on list' });
         show({ tone: 'warning', title: `Nothing to pick in ${code}` });
         return;
       }
       dismiss();
-      openBox(code);
+      openBox(target);
       return;
     }
 
