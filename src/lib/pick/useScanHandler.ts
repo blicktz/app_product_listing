@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'expo-router';
 import { boxScanIndex } from './boxLabel';
 import { groupBoxes, labelSku, type LineState } from './derive';
-import { feedbackError, feedbackSuccess, feedbackWarning, preparePickFeedback } from './feedback';
+import { feedbackBoxOpen, feedbackError, feedbackSuccess, feedbackWarning, preparePickFeedback } from './feedback';
 import { classifyScan, resolveItemScan } from './scan';
 import { currentLineStates, getSnapshot, recordEvent } from './store';
 
@@ -116,6 +116,7 @@ export function useScanHandler({
         show({ tone: 'warning', title: `Nothing to pick in ${code}` });
         return;
       }
+      feedbackBoxOpen();
       dismiss();
       openBox(target);
       return;

@@ -1,5 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
-import { feedbackError, feedbackRepeat, feedbackSuccess, feedbackWarning, preparePickFeedback } from '../pick/feedback';
+import {
+  feedbackBoxOpen,
+  feedbackError,
+  feedbackRepeat,
+  feedbackSuccess,
+  feedbackWarning,
+  preparePickFeedback,
+} from '../pick/feedback';
 import { normalizeScan } from '../pick/scan';
 import type { Banner } from '../pick/useScanHandler';
 import type { StowRow } from './derive';
@@ -57,7 +64,7 @@ export function useStowScan() {
   const openBox = (label: string, code: string) => {
     declinePendingMove('replaced by the next scan');
     recordStowEvent({ action: 'box_open', boxLabel: label, scannedValue: code });
-    feedbackSuccess();
+    feedbackBoxOpen();
     show({ tone: 'success', title: `${label} open`, detail: 'Scan items into this box.' });
   };
 
