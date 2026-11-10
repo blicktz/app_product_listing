@@ -12,7 +12,11 @@
       "bundleIdentifier": "com.blickt.product-listings",
       "infoPlist": {
         "UIFileSharingEnabled": true,
-        "LSSupportsOpeningDocumentsInPlace": true
+        "LSSupportsOpeningDocumentsInPlace": true,
+        "NSLocalNetworkUsageDescription": "Loads the pick list from, and sends picks to, the Mac on your home network.",
+        "NSAppTransportSecurity": {
+          "NSAllowsLocalNetworking": true
+        }
       }
     },
     "android": {
