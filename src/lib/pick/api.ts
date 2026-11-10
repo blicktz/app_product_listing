@@ -15,6 +15,22 @@ const EVENTS_TIMEOUT_MS = 15_000;
 
 export const LOOKBACK_DAYS = 7;
 
+/** A non-2xx answer from the Mac; `status` lets callers tell the cases apart. */
+export class MacServerError extends Error {
+  constructor(
+    readonly status: number,
+    detail: string
+  ) {
+    super(`Mac server error (${status}) ${detail}`.trim());
+    this.name = 'MacServerError';
+  }
+}
+
+/** For requests that can't go through call(), such as file uploads. */
+export function macAuthHeaders(): Record<string, string> {
+  return { Authorization: `Bearer ${TOKEN}` };
+}
+
 export async function call<T>(
   baseUrl: string,
   path: string,
@@ -32,12 +48,12 @@ export async function call<T>(
       signal: controller.signal,
       headers: {
         ...init.headers,
-        Authorization: `Bearer ${TOKEN}`,
+        ...macAuthHeaders(),
       },
     });
     if (!response.ok) {
       const detail = await response.text().catch(() => '');
-      throw new Error(`Mac server error (${response.status}) ${detail}`.trim());
+      throw new MacServerError(response.status, detail);
     }
     return (await response.json()) as T;
   } catch (error) {

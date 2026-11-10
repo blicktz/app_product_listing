@@ -2,8 +2,14 @@ import { useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { DEFAULT_SERVER_URL, checkHealth } from '@/lib/pick/api';
-import { setServerUrl } from '@/lib/pick/store';
+import { setServerUrl, setUploadDestination, type UploadDestination } from '@/lib/pick/store';
 import { usePickSnapshot } from '@/lib/pick/usePick';
+import { retryAll } from '@/lib/uploadQueue/runner';
+
+const DESTINATIONS: { value: UploadDestination; label: string }[] = [
+  { value: 'mac', label: 'Mac' },
+  { value: 'r2', label: 'R2' },
+];
 
 // Where the Mac Studio's portal answers on the home Wi-Fi.
 export default function PickSettingsScreen() {
@@ -22,6 +28,12 @@ export default function PickSettingsScreen() {
   const save = () => {
     setServerUrl(url);
     router.back();
+  };
+
+  const chooseDestination = (destination: UploadDestination) => {
+    setUploadDestination(destination);
+    // Jobs that were waiting on the old destination can go now.
+    retryAll();
   };
 
   return (
@@ -63,6 +75,27 @@ export default function PickSettingsScreen() {
           ? `${snap.unsentCount} pick event(s) are waiting to be sent to the Mac.`
           : 'All pick events have been sent to the Mac.'}
       </Text>
+
+      <Text style={[styles.label, styles.section]}>Shoot uploads to</Text>
+      <View style={styles.row}>
+        {DESTINATIONS.map(({ value, label }) => {
+          const selected = snap.uploadDestination === value;
+          return (
+            <Pressable
+              key={value}
+              style={[styles.button, selected ? styles.primary : null]}
+              onPress={() => chooseDestination(value)}
+              accessibilityRole="radio"
+              accessibilityState={{ selected }}
+            >
+              <Text style={[styles.buttonText, selected ? styles.primaryText : null]}>{label}</Text>
+            </Pressable>
+          );
+        })}
+      </View>
+      <Text style={styles.help}>
+        Applies straight away. A job that has started uploading finishes where it started.
+      </Text>
     </View>
   );
 }
@@ -78,6 +111,9 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#8e8e93',
     textTransform: 'uppercase',
+  },
+  section: {
+    marginTop: 16,
   },
   input: {
     height: 48,

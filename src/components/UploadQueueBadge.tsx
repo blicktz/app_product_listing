@@ -1,6 +1,4 @@
 import { Pressable, StyleSheet, Text } from 'react-native';
-import type { SFSymbol } from 'expo-symbols';
-import { Icon } from '@/components/ui';
 import { summarize, useUploadQueue } from '@/lib/uploadQueue/useUploadQueue';
 
 type Props = {
@@ -8,13 +6,11 @@ type Props = {
   onPress?: () => void;
   /** Render "All uploaded" instead of nothing when the queue is empty. */
   showIdle?: boolean;
-  /** outline: bordered chip (camera overlay); tinted: filled chip with an SF Symbol (Shoot screen). */
-  variant?: 'outline' | 'tinted';
 };
 
-type Status = { glyph: string; icon: SFSymbol; text: string; color: string; tint: string };
+type Status = { glyph: string; text: string; color: string };
 
-export function UploadQueueBadge({ onPress, showIdle = false, variant = 'outline' }: Props) {
+export function UploadQueueBadge({ onPress, showIdle = false }: Props) {
   const { jobs, online } = useUploadQueue();
   const { active, waiting, attention } = summarize(jobs);
 
@@ -22,53 +18,31 @@ export function UploadQueueBadge({ onPress, showIdle = false, variant = 'outline
   if (attention > 0) {
     status = {
       glyph: '!',
-      icon: 'exclamationmark.circle.fill',
       text: `${attention} need${attention === 1 ? 's' : ''} attention`,
       color: '#dc2626',
-      tint: 'rgba(255,59,48,0.12)',
     };
   } else if (waiting > 0 || (online === false && active > 0)) {
     status = {
       glyph: '',
-      icon: online === false ? 'wifi.slash' : 'arrow.clockwise.circle.fill',
       text: `${online === false ? 'Offline' : 'Retrying'} · ${waiting + active} waiting`,
       color: '#d97706',
-      tint: 'rgba(255,149,0,0.16)',
     };
   } else if (active > 0) {
     status = {
       glyph: '↑',
-      icon: 'arrow.up.circle.fill',
       text: `Uploading ${active}`,
       color: '#208AEF',
-      tint: 'rgba(0,122,255,0.12)',
     };
   } else if (showIdle) {
     status = {
       glyph: '✓',
-      icon: 'checkmark.circle.fill',
       text: 'All uploaded',
       color: '#15803d',
-      tint: 'rgba(52,199,89,0.16)',
     };
   }
 
   if (!status) {
     return null;
-  }
-
-  if (variant === 'tinted') {
-    return (
-      <Pressable
-        onPress={onPress}
-        disabled={!onPress}
-        style={({ pressed }) => [styles.tinted, { backgroundColor: status.tint, opacity: pressed ? 0.6 : 1 }]}
-        hitSlop={8}
-      >
-        <Icon name={status.icon} color={status.color} size={15} weight="semibold" />
-        <Text style={[styles.text, { color: status.color }]}>{status.text}</Text>
-      </Pressable>
-    );
   }
 
   return (
@@ -92,14 +66,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 4,
     alignSelf: 'center',
-  },
-  tinted: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
   },
   text: {
     fontSize: 13,

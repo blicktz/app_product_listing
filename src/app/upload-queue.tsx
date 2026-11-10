@@ -14,7 +14,9 @@ import { Stack } from 'expo-router';
 import type { SFSymbol } from 'expo-symbols';
 import { Button, EmptyState, Icon, SectionFooter, SectionHeader } from '@/components/ui';
 import { colors, shared, tabular, tints, type } from '@/lib/theme';
-import { useUploadQueue } from '@/lib/uploadQueue/useUploadQueue';
+import { usePickSnapshot } from '@/lib/pick/usePick';
+import { destinationName } from '@/lib/uploadQueue/destinations';
+import { needsAttention as jobNeedsAttention, queueWaitReason, useUploadQueue } from '@/lib/uploadQueue/useUploadQueue';
 import {
   clearCompleted,
   exportToPhotos,
@@ -27,9 +29,10 @@ import {
 import { jobUploadFiles } from '@/lib/uploadQueue/prepare';
 import { photoFilename, type UploadJob } from '@/lib/uploadQueue/store';
 
-// Every SKU session waiting to reach R2, plus today's finished ones. Jobs that
-// exhausted their retries or hit a numbering conflict sit at the top with the
-// manual fallbacks: retry, renumber, save to Photos, or (deliberately) delete.
+// Every SKU session waiting to reach its destination, plus today's finished
+// ones. Jobs that exhausted their retries, hit a numbering conflict or were
+// refused sit at the top with the manual fallbacks: retry, renumber, save to
+// Photos, or (deliberately) delete.
 
 const STATUS_LABELS: Record<UploadJob['status'], string> = {
   queued: 'Queued',
@@ -38,6 +41,7 @@ const STATUS_LABELS: Record<UploadJob['status'], string> = {
   'waiting-retry': 'Waiting to retry',
   failed: 'Upload failed',
   conflict: 'Number conflict',
+  rejected: 'Refused',
   done: 'Uploaded',
 };
 
@@ -63,6 +67,12 @@ function statusDetail(job: UploadJob, now: number, online: boolean | null): stri
       return `${progress} · ${sent}/${files.length} files`;
     case 'waiting-retry':
       if (job.nextAttemptAt === null) {
+        if (job.waitReason === 'drive') {
+          return `${progress} · Mac drive offline`;
+        }
+        if (job.waitReason === 'mac') {
+          return `${progress} · Waiting for Mac`;
+        }
         return online === false ? `${progress} · waiting for network` : progress;
       }
       return `${progress} · retry in ${Math.max(0, Math.ceil((job.nextAttemptAt - now) / 1000))}s`;
@@ -81,6 +91,9 @@ type Section = { title: string; data: UploadJob[] };
 
 export default function UploadQueueScreen() {
   const { jobs, online, activeJobId } = useUploadQueue();
+  const { uploadDestination } = usePickSnapshot();
+  const waitReason = queueWaitReason(jobs);
+  const placeOf = (job: UploadJob) => destinationName(job.destination ?? uploadDestination);
   const [now, setNow] = useState(() => Date.now());
   const [busyJobId, setBusyJobId] = useState<string | null>(null);
 
@@ -94,10 +107,8 @@ export default function UploadQueueScreen() {
     return () => clearInterval(timer);
   }, [hasCountdown]);
 
-  const attention = jobs.filter((j) => j.status === 'failed' || j.status === 'conflict');
-  const inProgress = jobs.filter(
-    (j) => j.status !== 'failed' && j.status !== 'conflict' && j.status !== 'done'
-  );
+  const attention = jobs.filter(jobNeedsAttention);
+  const inProgress = jobs.filter((j) => !jobNeedsAttention(j) && j.status !== 'done');
   const done = jobs.filter((j) => j.status === 'done').reverse();
   const sections: Section[] = [
     { title: 'Needs attention', data: attention },
@@ -135,7 +146,7 @@ export default function UploadQueueScreen() {
       } catch (error) {
         Alert.alert(
           'Could Not Renumber',
-          `Couldn't reach R2 to find free numbers. ${error instanceof Error ? error.message : ''}`
+          `Couldn't reach ${placeOf(job)} to find free numbers. ${error instanceof Error ? error.message : ''}`
         );
       }
     });
@@ -146,7 +157,7 @@ export default function UploadQueueScreen() {
       'Delete From Phone?',
       `${pending} photo${pending === 1 ? '' : 's'} of ${job.sku} ${
         pending === 1 ? 'has' : 'have'
-      } not reached R2 and will be lost. Save to Photos first if you need them.`,
+      } not reached ${placeOf(job)} and will be lost. Save to Photos first if you need them.`,
       [
         { text: 'Cancel', style: 'cancel' },
         { text: 'Delete', style: 'destructive', onPress: () => remove(job.id) },
@@ -156,7 +167,7 @@ export default function UploadQueueScreen() {
 
   const renderJob = ({ item: job }: { item: UploadJob }) => {
     const thumb = job.status === 'done' ? null : firstThumbnailUri(job);
-    const needsAttention = job.status === 'failed' || job.status === 'conflict';
+    const needsAttention = jobNeedsAttention(job);
     const busy = busyJobId === job.id;
     const look = STATUS_LOOK[job.status];
     return (
@@ -208,7 +219,7 @@ export default function UploadQueueScreen() {
                 disabled={busy}
                 style={styles.action}
               />
-            ) : (
+            ) : job.status === 'rejected' ? null : (
               <Button
                 label="Retry now"
                 icon="arrow.clockwise"
@@ -248,7 +259,7 @@ export default function UploadQueueScreen() {
       <Stack.Screen
         options={{
           headerRight: () =>
-            attention.length > 0 || inProgress.some((j) => j.status === 'waiting-retry') ? (
+            attention.some((j) => j.status !== 'rejected') || inProgress.some((j) => j.status === 'waiting-retry') ? (
               <Pressable onPress={retryAll} hitSlop={8}>
                 <Text style={styles.headerButton}>Retry all</Text>
               </Pressable>
@@ -280,6 +291,20 @@ export default function UploadQueueScreen() {
                 Offline. Photos are safe on this phone and will upload when the network returns.
               </Text>
             </View>
+          ) : waitReason === 'mac' ? (
+            <View style={[shared.card, styles.offline]}>
+              <Icon name="desktopcomputer" color={colors.orange} size={20} />
+              <Text style={styles.offlineText}>
+                Waiting for Mac. Photos are safe on this phone and will upload when the Mac can be reached.
+              </Text>
+            </View>
+          ) : waitReason === 'drive' ? (
+            <View style={[shared.card, styles.offline]}>
+              <Icon name="externaldrive.badge.exclamationmark" color={colors.orange} size={20} />
+              <Text style={styles.offlineText}>
+                Mac drive offline. Photos are safe on this phone and will upload when the drive is mounted.
+              </Text>
+            </View>
           ) : null
         }
         ListEmptyComponent={
@@ -287,13 +312,13 @@ export default function UploadQueueScreen() {
             icon="checkmark.icloud.fill"
             iconColor={colors.green}
             title="Nothing waiting"
-            message="Everything is on R2."
+            message={`Everything is on ${destinationName(uploadDestination)}.`}
           />
         }
         ListFooterComponent={
           jobs.length > 0 ? (
             <SectionFooter>
-              Queued photos are kept in the app&apos;s folder until R2 confirms them. You can
+              Queued photos are kept in the app&apos;s folder until they&apos;re confirmed uploaded. You can
               also reach them in the Files app under On My iPhone › FPops ›
               upload-queue.
             </SectionFooter>
@@ -311,6 +336,7 @@ const STATUS_LOOK: Record<UploadJob['status'], { icon: SFSymbol; color: ColorVal
   'waiting-retry': { icon: 'arrow.clockwise.circle.fill', color: colors.orange },
   failed: { icon: 'exclamationmark.circle.fill', color: colors.red },
   conflict: { icon: 'exclamationmark.triangle.fill', color: colors.red },
+  rejected: { icon: 'xmark.octagon.fill', color: colors.red },
   done: { icon: 'checkmark.circle.fill', color: colors.green },
 };
 

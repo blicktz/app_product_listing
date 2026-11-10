@@ -2,14 +2,18 @@ import { Stack } from 'expo-router';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { startUploadQueue } from '@/lib/uploadQueue/runner';
 import { startPickStore } from '@/lib/pick/store';
+import { startShootLog } from '@/lib/shootLog/store';
 import { startStowStore } from '@/lib/stow/store';
 
+// Load the last pick list and send any pick events still queued on the phone.
+// First, because everything below uses the Mac address and settings it loads.
+startPickStore();
+// Before the queue, which writes to this log.
+startShootLog();
 // Resume anything left in the on-disk upload queue (from a previous run, a
 // crash, or an offline stretch) as soon as the app launches.
 startUploadQueue();
-// Load the last pick list and send any pick events still queued on the phone.
-startPickStore();
-// Same for stow events. Uses the Mac address loaded by the pick store above.
+// Same as Pick for stow events.
 startStowStore();
 
 export default function RootLayout() {

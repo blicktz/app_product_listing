@@ -11,7 +11,7 @@ import type { PickAction, PickEvent, PickLine, PickList } from './types';
 //
 //   pick/state.json     last pick list from the Mac + lines whose order vanished
 //   pick/events.json    every pick event made on this phone (queued or accepted)
-//   pick/settings.json  Mac server URL override
+//   pick/settings.json  Mac server URL override, Shoot upload destination
 //
 // Events are written to disk before anything else happens, then sent to the Mac
 // in the background and retried until it accepts them.
@@ -31,9 +31,17 @@ type PersistedState = {
   orphans: OrphanLine[];
 };
 
+export type UploadDestination = 'mac' | 'r2';
+
+// R2 until the Mac's /shoot routes are live; then this becomes 'mac'. A choice
+// made on the Mac Server screen always wins over this default.
+const DEFAULT_UPLOAD_DESTINATION: UploadDestination = 'r2';
+
 export type PickSnapshot = PersistedState & {
   events: LocalEvent[];
   serverUrl: string;
+  /** Where Shoot sends new photos. */
+  uploadDestination: UploadDestination;
   /** null until the first request this run. */
   online: boolean | null;
   refreshing: 'full' | 'quick' | null;
@@ -57,6 +65,7 @@ const DEVICE = `${Constants.deviceName ?? 'iPhone'} / app ${Constants.expoConfig
 let state: PersistedState = { list: null, fetchStartedAt: null, loadedAt: null, orphans: [] };
 let events: LocalEvent[] = [];
 let serverUrl = DEFAULT_SERVER_URL;
+let uploadDestinationChoice: UploadDestination | null = null;
 let online: boolean | null = null;
 let refreshing: PickSnapshot['refreshing'] = null;
 let refreshError: string | null = null;
@@ -72,6 +81,7 @@ function buildSnapshot(): PickSnapshot {
     ...state,
     events,
     serverUrl,
+    uploadDestination: uploadDestinationChoice ?? DEFAULT_UPLOAD_DESTINATION,
     online,
     refreshing,
     refreshError,
@@ -136,10 +146,11 @@ export function startPickStore() {
   started = true;
   state = { ...state, ...(readJson<PersistedState>(STATE_FILE) ?? {}) };
   events = readJson<LocalEvent[]>(EVENTS_FILE) ?? [];
-  const settings = readJson<{ serverUrl?: string }>(SETTINGS_FILE);
+  const settings = readJson<{ serverUrl?: string; uploadDestination?: UploadDestination }>(SETTINGS_FILE);
   if (settings?.serverUrl) {
     serverUrl = settings.serverUrl;
   }
+  uploadDestinationChoice = settings?.uploadDestination ?? null;
   notify();
 
   AppState.addEventListener('change', (appState) => {
@@ -167,12 +178,26 @@ function setOnline(value: boolean) {
   }
 }
 
+// Only choices are saved, so a later change to a default still reaches this phone.
+function saveSettings() {
+  writeJson(SETTINGS_FILE, {
+    ...(serverUrl !== DEFAULT_SERVER_URL ? { serverUrl } : {}),
+    ...(uploadDestinationChoice ? { uploadDestination: uploadDestinationChoice } : {}),
+  });
+}
+
 export function setServerUrl(url: string) {
   serverUrl = url.trim();
-  writeJson(SETTINGS_FILE, { serverUrl });
+  saveSettings();
   online = null;
   notify();
   void tick();
+}
+
+export function setUploadDestination(destination: UploadDestination) {
+  uploadDestinationChoice = destination;
+  saveSettings();
+  notify();
 }
 
 // --- Events ----------------------------------------------------------------

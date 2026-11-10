@@ -1,5 +1,6 @@
 import { NativeTabs } from 'expo-router/unstable-native-tabs';
 import { usePickData } from '@/lib/pick/usePick';
+import { summarize, useUploadQueue } from '@/lib/uploadQueue/useUploadQueue';
 
 // Bottom nav: the system iOS tab bar (Liquid Glass on iOS 26+).
 // Shoot = photo capture (the original home screen); Stow = putting products
@@ -13,11 +14,15 @@ export default function TabsLayout() {
     }
   }
 
+  const { jobs } = useUploadQueue();
+  const { attention } = summarize(jobs);
+
   return (
     <NativeTabs>
-      <NativeTabs.Trigger name="index">
+      <NativeTabs.Trigger name="(shoot)">
         <NativeTabs.Trigger.Icon sf={{ default: 'camera', selected: 'camera.fill' }} md="photo_camera" />
         <NativeTabs.Trigger.Label>Shoot</NativeTabs.Trigger.Label>
+        <NativeTabs.Trigger.Badge hidden={attention === 0}>{String(attention)}</NativeTabs.Trigger.Badge>
       </NativeTabs.Trigger>
       {/* An open box is left with Finish, so re-tapping the tab must not pop it. */}
       <NativeTabs.Trigger name="stow" disablePopToTop>

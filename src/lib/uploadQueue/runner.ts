@@ -1,7 +1,9 @@
 import { AppState } from 'react-native';
 import * as Network from 'expo-network';
 import * as MediaLibrary from 'expo-media-library';
-import { checkSku, presignUpload } from '../uploadApi';
+import { MacServerError, checkHealth } from '../pick/api';
+import { getSnapshot as getPickSnapshot, type UploadDestination } from '../pick/store';
+import { logShootEvent } from '../shootLog/store';
 import { sleep } from '../sleep';
 import { sidecarFilename } from '../photoSidecar';
 import {
@@ -14,22 +16,28 @@ import {
   recordLedgerMax,
   saveJob,
   type UploadJob,
+  type WaitReason,
 } from './store';
+import { destinationName, lookupNumbers, prepareSender, type SendFile } from './destinations';
 import { jobUploadFiles, prepareListingEnv, preparePhoto } from './prepare';
 
-// Background upload queue. One job (= one finished SKU session) is processed at
-// a time, oldest first: prepare (crop + sidecar), R2 collision check, upload.
-// A job that keeps failing parks as `failed` and stays on disk; it is retried
-// whenever the network comes back, the app returns to the foreground, every
-// few minutes while open, or by hand from the Upload Queue screen. Nothing is
-// ever deleted until R2 has confirmed every file, or the user deletes it.
+// Upload queue. One job (= one finished SKU session) is processed at a time,
+// oldest first: prepare (crop + sidecar), collision check, upload, to whichever
+// destination the job is on (see destinations.ts). A job that keeps failing
+// parks as `failed` and stays on disk; it is retried whenever the network comes
+// back, the app returns to the foreground, every few minutes while open, or by
+// hand from the Upload Queue screen. Nothing is ever deleted until the
+// destination has confirmed every file, or the user deletes it.
 
 const MAX_UPLOAD_ATTEMPTS = 5;
 const UPLOAD_RETRY_BASE_DELAY_MS = 10_000; // wait before the 1st retry
 const UPLOAD_RETRY_BACKOFF_FACTOR = 1.5; // ~10s, 15s, 22s, 30s
 const UPLOAD_RETRY_MAX_DELAY_MS = 30_000; // cap
-const UPLOAD_TIMEOUT_MS = 60_000;
 const FAILED_SWEEP_INTERVAL_MS = 5 * 60_000;
+const MAC_RECHECK_INTERVAL_MS = 30_000;
+// One failed health check speaks for the whole pass, so a long queue doesn't
+// wait out the health timeout once per job.
+const MAC_DOWN_MEMORY_MS = 10_000;
 // Cropping right after a shutter press causes shutter lag (see e042b94), so
 // prepare work waits until the camera has been quiet this long.
 const CAPTURE_QUIET_MS = 3000;
@@ -51,6 +59,7 @@ let started = false;
 let running = false;
 let wakeTimer: ReturnType<typeof setTimeout> | null = null;
 let lastCaptureAt = 0;
+let macDownUntil = 0;
 
 function notify() {
   // The runner mutates its jobs in place; hand React fresh copies so list rows
@@ -133,8 +142,37 @@ export function startUploadQueue() {
     }
   });
   setInterval(() => retryAll(), FAILED_SWEEP_INTERVAL_MS);
+  setInterval(() => void rearmJobsWaitingForMac(), MAC_RECHECK_INTERVAL_MS);
 
   kick();
+}
+
+/** Jobs waiting on the Mac start again only once it answers. */
+async function rearmJobsWaitingForMac() {
+  const parked = jobs.filter(
+    (job) => job.status === 'waiting-retry' && (job.waitReason === 'mac' || job.waitReason === 'drive')
+  );
+  if (parked.length === 0 || !(await macReachable())) {
+    return;
+  }
+  for (const job of parked) {
+    if (job.status === 'waiting-retry') {
+      resetForRetry(job);
+    }
+  }
+  notify();
+  kick();
+}
+
+async function macReachable(): Promise<boolean> {
+  if (Date.now() < macDownUntil) {
+    return false;
+  }
+  const reachable = await checkHealth(getPickSnapshot().serverUrl);
+  if (!reachable) {
+    macDownUntil = Date.now() + MAC_DOWN_MEMORY_MS;
+  }
+  return reachable;
 }
 
 function setOnline(value: boolean) {
@@ -160,8 +198,33 @@ export function enqueue(job: UploadJob) {
   const maxNumber = Math.max(0, ...job.photos.map((photo) => photo.number));
   recordLedgerMax(job.dateRoot, job.sku, maxNumber);
   jobs.push(job);
+  const shotTimes = job.photos.map((photo) => photo.metadata.capturedAt).sort();
+  logJob('session_shot', job, {
+    numbers: job.photos.map((photo) => photo.number),
+    shot_started_at: shotTimes[0],
+    shot_ended_at: shotTimes[shotTimes.length - 1],
+    item_condition: job.listing?.itemCondition ?? null,
+    ebay_store: job.listing?.ebayStore ?? null,
+    destination: getPickSnapshot().uploadDestination,
+    numbered_offline: job.numberedOffline,
+  });
   notify();
   kick();
+}
+
+function logJob(
+  action: Parameters<typeof logShootEvent>[0]['action'],
+  job: UploadJob,
+  details: Omit<Parameters<typeof logShootEvent>[0], 'action' | 'sessionId' | 'dateRoot' | 'sku'> = {}
+) {
+  logShootEvent({ action, sessionId: job.id, dateRoot: job.dateRoot, sku: job.sku, ...details });
+}
+
+/** Photo numbers of this job that its destination hasn't confirmed. */
+function unsentNumbers(job: UploadJob): number[] {
+  return job.photos
+    .filter((photo) => !job.uploaded.includes(photoFilename(job.sku, photo.number)))
+    .map((photo) => photo.number);
 }
 
 function resetForRetry(job: UploadJob) {
@@ -174,14 +237,16 @@ function resetForRetry(job: UploadJob) {
 export function retry(jobId: string) {
   const job = jobs.find((j) => j.id === jobId);
   if (job && (job.status === 'failed' || job.status === 'waiting-retry')) {
+    macDownUntil = 0;
     resetForRetry(job);
     notify();
     kick();
   }
 }
 
-/** Re-arm every failed or waiting job. Conflicts need a human decision first. */
+/** Re-arm every failed or waiting job. Conflicts and rejections need a human decision first. */
 export function retryAll() {
+  macDownUntil = 0;
   let changed = false;
   for (const job of jobs) {
     if (job.status === 'failed' || job.status === 'waiting-retry') {
@@ -199,6 +264,10 @@ export function remove(jobId: string) {
   if (jobId === activeJobId) {
     return;
   }
+  const job = jobs.find((j) => j.id === jobId);
+  if (job && job.status !== 'done') {
+    logJob('deleted_from_phone', job, { numbers: unsentNumbers(job) });
+  }
   deleteJobDir(jobId);
   jobs = jobs.filter((job) => job.id !== jobId);
   notify();
@@ -214,17 +283,19 @@ export function clearCompleted() {
 }
 
 /**
- * Move a conflicting job's photos to numbers after everything on R2 (and
- * everything queued on this phone), then requeue it. Only valid before any
- * photo of the job has uploaded, which the collision check guarantees.
+ * Move a conflicting job's photos to numbers after everything at the
+ * destination (and everything queued on this phone), then requeue it. Only
+ * valid before any photo of the job has uploaded, which the conflict rules in
+ * processJob guarantee.
  */
 export async function renumber(jobId: string): Promise<void> {
   const job = jobs.find((j) => j.id === jobId);
   if (!job || job.status !== 'conflict') {
     return;
   }
-  const remote = await checkSku(job.dateRoot, job.sku);
+  const remote = await lookupNumbers(resolveDestination(job), job.dateRoot, job.sku);
   let next = Math.max(remote.nextNumber, getLedgerMax(job.dateRoot, job.sku) + 1);
+  const fromNumbers = job.photos.map((photo) => photo.number);
 
   for (const photo of job.photos) {
     const oldName = photoFilename(job.sku, photo.number);
@@ -254,6 +325,10 @@ export async function renumber(jobId: string): Promise<void> {
   job.lastError = null;
   resetForRetry(job);
   recordLedgerMax(job.dateRoot, job.sku, next - 1);
+  logJob('renumbered', job, {
+    from_numbers: fromNumbers,
+    to_numbers: job.photos.map((photo) => photo.number),
+  });
   notify();
   kick();
 }
@@ -282,6 +357,7 @@ export async function exportToPhotos(jobId: string): Promise<number> {
     return 0;
   }
   await MediaLibrary.Album.create(`Unuploaded – ${job.dateRoot} ${job.sku}`, uris, false);
+  logJob('exported_to_photos', job, { photo_count: uris.length });
   return uris.length;
 }
 
@@ -292,7 +368,7 @@ export function localMaxNumber(dateRoot: string, sku: string): number {
   return getLedgerMax(dateRoot, sku);
 }
 
-/** Photos of this SKU still waiting on this phone (not yet on R2). */
+/** Photos of this SKU still waiting on this phone (not yet at the destination). */
 export function pendingPhotoCount(queued: UploadJob[], dateRoot: string, sku: string): number {
   let count = 0;
   for (const job of queued) {
@@ -366,21 +442,93 @@ async function waitForQuietCamera() {
   }
 }
 
+function markFailed(job: UploadJob, message: string) {
+  job.status = 'failed';
+  job.nextAttemptAt = null;
+  job.waitReason = null;
+  job.lastError = message;
+  if (!job.failureLogged) {
+    job.failureLogged = true;
+    logJob('upload_failed', job, { error: message });
+  }
+  persist(job);
+}
+
 function failAttempt(job: UploadJob, message: string) {
   job.attempts += 1;
   job.lastError = message;
+  job.waitReason = null;
   if (job.attempts >= MAX_UPLOAD_ATTEMPTS) {
-    job.status = 'failed';
-    job.nextAttemptAt = null;
-  } else {
-    const delay = Math.min(
-      Math.round(UPLOAD_RETRY_BASE_DELAY_MS * UPLOAD_RETRY_BACKOFF_FACTOR ** (job.attempts - 1)),
-      UPLOAD_RETRY_MAX_DELAY_MS
-    );
-    job.status = 'waiting-retry';
-    job.nextAttemptAt = Date.now() + delay;
+    markFailed(job, message);
+    return;
   }
+  const delay = Math.min(
+    Math.round(UPLOAD_RETRY_BASE_DELAY_MS * UPLOAD_RETRY_BACKOFF_FACTOR ** (job.attempts - 1)),
+    UPLOAD_RETRY_MAX_DELAY_MS
+  );
+  job.status = 'waiting-retry';
+  job.nextAttemptAt = Date.now() + delay;
   persist(job);
+}
+
+/** Wait without using an attempt; something else re-arms the job. */
+function park(job: UploadJob, reason: WaitReason, message: string) {
+  job.status = 'waiting-retry';
+  job.nextAttemptAt = null;
+  job.waitReason = reason;
+  job.lastError = message;
+  persist(job);
+}
+
+function markConflict(job: UploadJob, numbers: number[], message: string) {
+  job.status = 'conflict';
+  job.nextAttemptAt = null;
+  job.waitReason = null;
+  job.lastError = message;
+  logJob('upload_conflict', job, { numbers });
+  persist(job);
+}
+
+function markRejected(job: UploadJob, httpStatus: number | undefined, message: string) {
+  job.status = 'rejected';
+  job.nextAttemptAt = null;
+  job.waitReason = null;
+  job.lastError = message;
+  logJob('upload_rejected', job, { http_status: httpStatus, error: message });
+  persist(job);
+}
+
+/** Follows the setting until a file has been confirmed, so one job is never split. */
+function resolveDestination(job: UploadJob): UploadDestination {
+  if (job.uploaded.length > 0) {
+    // Only jobs from before the Mac option exist without one, and those went to R2.
+    job.destination ??= 'r2';
+    return job.destination;
+  }
+  const current = getPickSnapshot().uploadDestination;
+  if (job.destination !== current) {
+    job.destination = current;
+    job.collisionChecked = false;
+  }
+  return current;
+}
+
+/** Mac answers that aren't worth an attempt. True if the job was handled. */
+function handleMacError(job: UploadJob, error: unknown): boolean {
+  if (error instanceof MacServerError && error.status === 503) {
+    park(job, 'drive', 'Mac drive offline');
+    return true;
+  }
+  if (error instanceof MacServerError && error.status === 401) {
+    markFailed(job, 'The Mac refused this phone. Check the Mac token.');
+    return true;
+  }
+  return false;
+}
+
+function numberInFilename(filename: string): number[] {
+  const match = filename.match(/_(\d+)\.(?:jpg|json)$/i);
+  return match ? [Number(match[1])] : [];
 }
 
 async function processJob(job: UploadJob) {
@@ -408,20 +556,26 @@ async function processJob(job: UploadJob) {
 
   // Offline: park without burning a retry; the network listener re-arms it.
   if (online === false) {
-    job.status = 'waiting-retry';
-    job.nextAttemptAt = null;
-    job.lastError = 'Offline – waiting for network';
-    persist(job);
+    park(job, 'network', 'Offline – waiting for network');
+    return;
+  }
+
+  // Having a network doesn't mean being on home Wi-Fi with the Mac awake.
+  const destination = resolveDestination(job);
+  if (destination === 'mac' && !(await macReachable())) {
+    park(job, 'mac', 'Waiting for Mac');
     return;
   }
 
   job.status = 'uploading';
+  job.waitReason = null;
+  job.lastError = null;
   persist(job);
 
-  // 2. Never overwrite photos already on R2 (offline numbering, other device).
+  // 2. Never overwrite photos already there (offline numbering, other device).
   if (!job.collisionChecked) {
     try {
-      const remote = await checkSku(job.dateRoot, job.sku);
+      const remote = await lookupNumbers(destination, job.dateRoot, job.sku);
       const taken = new Set(remote.numbers ?? []);
       const clashes = job.photos.filter(
         (photo) =>
@@ -429,34 +583,38 @@ async function processJob(job: UploadJob) {
           (remote.numbers ? taken.has(photo.number) : photo.number < remote.nextNumber)
       );
       if (clashes.length > 0) {
-        job.status = 'conflict';
-        job.nextAttemptAt = null;
-        job.lastError =
-          `R2 already has ${clashes.map((p) => `_${String(p.number).padStart(2, '0')}`).join(', ')} ` +
-          `for ${job.sku}. Renumber to upload after them.`;
-        persist(job);
+        const place = destinationName(destination);
+        markConflict(
+          job,
+          clashes.map((p) => p.number),
+          `${place[0].toUpperCase()}${place.slice(1)} already has ` +
+            `${clashes.map((p) => `_${String(p.number).padStart(2, '0')}`).join(', ')} ` +
+            `for ${job.sku}. Renumber to upload after them.`
+        );
         return;
       }
       job.collisionChecked = true;
       persist(job);
     } catch (error) {
-      failAttempt(job, errorMessage(error));
+      if (!handleMacError(job, error)) {
+        failAttempt(job, errorMessage(error));
+      }
       return;
     }
   }
 
-  // 3. Upload whatever R2 hasn't confirmed yet.
+  // 3. Upload whatever the destination hasn't confirmed yet.
   const pending = jobUploadFiles(job).filter((file) => !job.uploaded.includes(file.filename));
   let lastError: string | null = null;
 
   if (pending.length > 0) {
-    let uploadUrls: Record<string, string>;
+    let send: SendFile;
     try {
-      ({ uploadUrls } = await presignUpload(
-        job.dateRoot,
-        job.sku,
+      send = await prepareSender(
+        destination,
+        job,
         pending.map((file) => file.filename)
-      ));
+      );
     } catch (error) {
       failAttempt(job, errorMessage(error));
       return;
@@ -464,36 +622,38 @@ async function processJob(job: UploadJob) {
 
     for (const { filename, contentType } of pending) {
       try {
-        const url = uploadUrls[filename];
-        if (!url) {
-          throw new Error(`No upload URL returned for ${filename}`);
-        }
         const file = jobFile(job.id, filename);
         if (!file.exists) {
           throw new Error(`${filename} is missing on this phone`);
         }
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), UPLOAD_TIMEOUT_MS);
-        let status: number;
-        try {
-          // Streams from disk; the iOS background session keeps going if the
-          // app is suspended mid-transfer.
-          ({ status } = await file.upload(url, {
-            httpMethod: 'PUT',
-            headers: { 'Content-Type': contentType },
-            mimeType: contentType,
-            sessionType: 'background',
-            signal: controller.signal,
-          }));
-        } finally {
-          clearTimeout(timeout);
+        const outcome = await send(filename, contentType, file);
+        switch (outcome.kind) {
+          case 'ok':
+            job.uploaded.push(filename);
+            persist(job);
+            break;
+          case 'retry':
+            lastError = outcome.message;
+            break;
+          case 'drive-offline':
+            park(job, 'drive', outcome.message);
+            return;
+          case 'unauthorized':
+            markFailed(job, outcome.message);
+            return;
+          case 'rejected':
+            markRejected(job, outcome.httpStatus, outcome.message);
+            return;
+          case 'conflict':
+            // listing.env is sent first and is always replaced, so it doesn't
+            // count: Renumber is safe while no photo or sidecar has landed.
+            if (job.uploaded.some((name) => /\.(jpg|json)$/i.test(name))) {
+              markRejected(job, 409, `${outcome.message} Part of this job is already on the Mac.`);
+            } else {
+              markConflict(job, numberInFilename(filename), `${outcome.message} Renumber to upload after it.`);
+            }
+            return;
         }
-        if (status < 200 || status >= 300) {
-          // 403 is usually an expired presign; the next pass presigns again.
-          throw new Error(`Upload failed for ${filename} (${status})`);
-        }
-        job.uploaded.push(filename);
-        persist(job);
       } catch (error) {
         lastError = errorMessage(error);
       }
@@ -506,6 +666,7 @@ async function processJob(job: UploadJob) {
     job.lastError = null;
     job.nextAttemptAt = null;
     deleteJobPayload(job.id);
+    logJob('upload_complete', job, { photo_count: job.photos.length, destination });
     persist(job);
     return;
   }

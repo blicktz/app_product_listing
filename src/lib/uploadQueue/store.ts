@@ -1,10 +1,11 @@
 import { Directory, File, Paths } from 'expo-file-system';
 import type { CaptureMetadata } from '../photoSidecar';
 import type { ListingConfig } from '../listingConfig';
+import type { UploadDestination } from '../pick/store';
 
 // Durable, on-disk upload queue. Every finished SKU session becomes a job
 // directory under Documents (not cache: iOS may purge cache, and a job must
-// survive force-quits and reboots until it is confirmed on R2):
+// survive force-quits and reboots until its destination confirms it):
 //
 //   upload-queue/<jobId>/job.json         manifest (this file's UploadJob)
 //   upload-queue/<jobId>/raw_<nn>.jpg     original captures, until prepared
@@ -23,7 +24,12 @@ export type JobStatus =
   | 'waiting-retry'
   | 'failed'
   | 'conflict'
+  /** Refused for good by the destination; automatic retries skip it. */
+  | 'rejected'
   | 'done';
+
+/** What a parked job is waiting for. */
+export type WaitReason = 'network' | 'mac' | 'drive';
 
 export type JobPhoto = {
   /** Photo number in `{sku}_{nn}.jpg`, fixed when the job is created. */
@@ -42,14 +48,19 @@ export type UploadJob = {
   sku: string;
   listing: ListingConfig | null;
   photos: JobPhoto[];
-  /** The start number came from this phone's ledger because R2 was unreachable. */
+  /** The start number came from this phone's ledger because the destination was unreachable. */
   numberedOffline: boolean;
   status: JobStatus;
+  /** Follows the setting until a file is confirmed, then fixed so a job is never split. */
+  destination?: UploadDestination;
+  waitReason?: WaitReason | null;
+  /** upload_failed goes in the shoot log once per job. */
+  failureLogged?: boolean;
   /** True once every upload file (jpg, json, listing.env) is written. */
   prepared: boolean;
-  /** True once the R2 collision check passed for the current numbers. */
+  /** True once the destination's collision check passed for the current numbers. */
   collisionChecked: boolean;
-  /** Filenames confirmed on R2, so a retry only sends what's missing. */
+  /** Filenames confirmed by the destination, so a retry only sends what's missing. */
   uploaded: string[];
   /** Attempts in the current retry round; reset by a manual/auto re-trigger. */
   attempts: number;

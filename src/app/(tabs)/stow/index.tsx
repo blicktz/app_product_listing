@@ -1,34 +1,16 @@
 import { useCallback, useState } from 'react';
-import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Stack, useFocusEffect, useRouter } from 'expo-router';
+import { MacHeaderButtons } from '@/components/MacHeaderButtons';
 import { ScanBanner } from '@/components/pick/ScanBanner';
 import { ScanCapture } from '@/components/pick/ScanCapture';
 import { Card, EmptyState, Icon, Row, SectionHeader } from '@/components/ui';
-import { usePickSnapshot } from '@/lib/pick/usePick';
+import { formatTime, sessionDate } from '@/lib/sessionTime';
 import type { StowSession } from '@/lib/stow/derive';
 import { refreshStowState } from '@/lib/stow/store';
 import { useStowData } from '@/lib/stow/useStow';
 import { useStowScan } from '@/lib/stow/useStowScan';
 import { colors, shared, tints, type } from '@/lib/theme';
-
-function formatTime(iso: string | null): string {
-  if (!iso) {
-    return '–';
-  }
-  const d = new Date(iso);
-  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-}
-
-function sessionDate(iso: string): string {
-  const d = new Date(iso);
-  const today = new Date();
-  const sameDay =
-    d.getFullYear() === today.getFullYear() && d.getMonth() === today.getMonth() && d.getDate() === today.getDate();
-  const day = sameDay
-    ? 'Today'
-    : `${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-  return `${day} ${formatTime(iso)}`;
-}
 
 function plural(n: number, word: string, many = `${word}s`): string {
   return `${n} ${n === 1 ? word : many}`;
@@ -39,31 +21,8 @@ function sessionLine(session: StowSession): string {
 }
 
 function HeaderButtons() {
-  const router = useRouter();
-  const { online } = usePickSnapshot();
   const { snap } = useStowData();
-  const dot = online === null ? colors.tertiaryLabel : online ? colors.green : colors.red;
-
-  return (
-    <View style={styles.headerButtons}>
-      <Pressable hitSlop={8} onPress={() => router.push('/pick-settings')} style={styles.headerButton}>
-        <Icon name="desktopcomputer" color={colors.blue} size={22} />
-        <View style={[styles.statusDot, { backgroundColor: dot }]} />
-      </Pressable>
-      <Pressable
-        hitSlop={8}
-        onPress={() => void refreshStowState()}
-        disabled={snap.refreshing}
-        style={styles.headerButton}
-      >
-        {snap.refreshing ? (
-          <ActivityIndicator />
-        ) : (
-          <Icon name="arrow.clockwise" color={colors.blue} size={21} weight="medium" />
-        )}
-      </Pressable>
-    </View>
-  );
+  return <MacHeaderButtons refreshing={snap.refreshing} onRefresh={() => void refreshStowState()} />;
 }
 
 export default function StowHomeScreen() {
@@ -169,28 +128,6 @@ export default function StowHomeScreen() {
 const styles = StyleSheet.create({
   scroll: {
     paddingBottom: 40,
-  },
-  headerButtons: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 18,
-    paddingHorizontal: 4,
-  },
-  headerButton: {
-    minWidth: 28,
-    height: 32,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  statusDot: {
-    position: 'absolute',
-    right: -3,
-    bottom: 4,
-    width: 9,
-    height: 9,
-    borderRadius: 5,
-    borderWidth: 1.5,
-    borderColor: '#ffffff',
   },
   syncRow: {
     flexDirection: 'row',
