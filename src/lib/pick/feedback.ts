@@ -9,6 +9,7 @@ type Player = ReturnType<typeof createAudioPlayer>;
 
 let dingPlayer: Player | null = null;
 let boxOpenPlayer: Player | null = null;
+let packageDonePlayer: Player | null = null;
 let warningPlayer: Player | null = null;
 let errorPlayer: Player | null = null;
 let audioReady = false;
@@ -25,6 +26,9 @@ export function preparePickFeedback() {
   }
   if (!boxOpenPlayer) {
     boxOpenPlayer = createAudioPlayer(require('../../../assets/sounds/box-open.mp3'));
+  }
+  if (!packageDonePlayer) {
+    packageDonePlayer = createAudioPlayer(require('../../../assets/sounds/package-done.mp3'));
   }
   if (!warningPlayer) {
     warningPlayer = createAudioPlayer(require('../../../assets/sounds/warning.mp3'));
@@ -57,6 +61,13 @@ export function feedbackBoxOpen() {
   preparePickFeedback();
   replay(boxOpenPlayer);
   void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+}
+
+/** A package is complete: a short rising three-note chime. */
+export function feedbackPackageDone() {
+  preparePickFeedback();
+  replay(packageDonePlayer);
+  void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 }
 
 export function feedbackWarning() {

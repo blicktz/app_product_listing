@@ -32,7 +32,7 @@ export type Decision =
 
 export type Outcome = {
   tone: 'success' | 'warning' | 'error';
-  sound: 'ok' | 'done' | 'warn' | 'error';
+  sound: 'label' | 'ok' | 'done' | 'warn' | 'error';
   title: string;
   detail?: string;
   /** Package to show afterwards; null keeps the current screen. */
@@ -312,7 +312,7 @@ export function outcome(decision: Decision, fresh: Board): Outcome {
       const combined = after.orders.length > 1 ? ` — ${after.orders.length} orders in one box` : '';
       return {
         tone: decision.record.result === 'dup' ? 'warning' : 'success',
-        sound: decision.record.result === 'dup' ? 'warn' : 'ok',
+        sound: decision.record.result === 'dup' ? 'warn' : 'label',
         title: decision.record.result === 'dup' ? `Label already scanned · ${after.pkg.name}` : `Label ✓ ${after.pkg.name}${combined}`,
         detail: `${after.doneItems}/${after.totalItems} items. Scan the items.${left}`,
         openKey: after.key,

@@ -120,7 +120,10 @@ export default function PackHomeScreen() {
   };
 
   const packages = snap.board.packages;
-  const toPack = packages.filter((p) => !p.packedAt);
+  const unpacked = packages.filter((p) => !p.packedAt);
+  // Cancelled packages aren't work to pack; they get their own section.
+  const toPack = unpacked.filter((p) => !p.cancelled);
+  const cancelled = unpacked.filter((p) => p.cancelled);
   const packedToday = packages
     .filter((p) => p.packedAt && sameLocalDay(p.packedAt))
     .sort((a, b) => (b.packedAt ?? '').localeCompare(a.packedAt ?? ''));
@@ -273,9 +276,24 @@ export default function PackHomeScreen() {
                 icon="checkmark.seal.fill"
                 iconColor={colors.green}
                 title="All packed"
-                message="Every loaded label is packed. Load labels again after printing more."
+                message={
+                  cancelled.length > 0
+                    ? 'Every label to ship is packed. Load labels again after printing more.'
+                    : 'Every loaded label is packed. Load labels again after printing more.'
+                }
               />
             )}
+
+            {cancelled.length > 0 ? (
+              <View>
+                <SectionHeader>Cancelled — do not ship · {cancelled.length}</SectionHeader>
+                <Card inset={52}>
+                  {cancelled.map((p) => (
+                    <PackageRow key={p.key} pkg={p} onPress={() => openPackage(p.key)} />
+                  ))}
+                </Card>
+              </View>
+            ) : null}
 
             {packedToday.length > 0 ? (
               <View>

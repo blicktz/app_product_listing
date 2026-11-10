@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useFocusEffect } from 'expo-router';
 import {
+  feedbackBoxOpen,
   feedbackError,
-  feedbackRepeat,
+  feedbackPackageDone,
   feedbackSuccess,
   feedbackWarning,
   preparePickFeedback,
@@ -24,9 +25,11 @@ const AUTO_HIDE_MS = 3500;
 // The "pack & stick the label" banner and notices from the other side stay longer.
 const LONG_HIDE_MS = 5000;
 
+// A label opens a package, like a box in Stow; an item counted is a ding.
 const SOUNDS: Record<Outcome['sound'], () => void> = {
+  label: feedbackBoxOpen,
   ok: feedbackSuccess,
-  done: feedbackRepeat,
+  done: feedbackPackageDone,
   warn: feedbackWarning,
   error: feedbackError,
 };

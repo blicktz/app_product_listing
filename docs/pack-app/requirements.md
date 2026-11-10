@@ -47,7 +47,7 @@ This is what the desktop does, and what the phone must do.
 9. **Mark packed:** a package packed outside the scan flow is marked packed by hand, after a confirmation. This covers orders with more than one label, or packing by hand. It's recorded as "marked by hand, not scan-verified".
 10. **Undo** takes back the package's latest scan, hand confirm or Mark packed. A label scan or Mark packed is taken back on every order in the package. The package is no longer packed.
 11. **Packages that must not go through the scan flow:**
-    - **Cancelled or refunded** (any order in the package): red, "CANCELLED — do not ship". It stays in To pack until it is marked packed (i.e. dealt with).
+    - **Cancelled or refunded** (any order in the package): red, "CANCELLED — do not ship". It is not work to pack: it is left out of "to pack" and listed in its own **Cancelled** section until it is marked packed (i.e. dealt with).
     - **More than one label** on an order: orange, "pack it by hand, then Mark packed". These can't be scan-verified.
 12. **Audit:** for a complaint, find the order (buyer, order ID or tracking) and read its scan record in order. It shows what was scanned or confirmed by hand, wrong items rejected, undos, and when it was packed.
 
@@ -101,7 +101,7 @@ Rules are checked in this order:
 ## App structure
 - Pack is a **new last tab**. The bottom nav is: **Shoot · Stow · Pick · Pack**.
   - Icon: `archivebox` (Pick already uses `shippingbox`).
-  - Badge: the number of packages still to pack, not counting cancelled ones.
+  - Badge: the number of packages still to pack, not counting cancelled ones. Hidden at 0.
 - Pack has two screens: **Pack home** and **Package**. A full-screen photo viewer opens from a Package photo.
 - Switching tabs keeps each tab's state.
 - Same UI kit and style as Pick and Stow:
@@ -138,8 +138,10 @@ Pack home ──tap / scan──▶ Package ──scan another label──▶ (s
 │ TO PACK · 12                       │
 │ ◐ #1013 +2   Kim L.   2/5     ›    │
 │ ○ 15391-68563  F&P    0/1     ›    │
-│ ⚠ 15393-24533  F&P  CANCELLED ›    │
 │ ⚠ 15400-11100  TTP  2 labels  ›    │
+├────────────────────────────────────┤
+│ CANCELLED — DO NOT SHIP · 1        │
+│ ⚠ 15393-24533  F&P  CANCELLED ›    │
 ├────────────────────────────────────┤
 │ ▸ PACKED TODAY · 8                 │
 ├────────────────────────────────────┤
@@ -152,18 +154,20 @@ Pack home ──tap / scan──▶ Package ──scan another label──▶ (s
   - **Quick reload**: `?load=0`, which just reads the Mac's database.
   - Pull to refresh = Quick reload.
 - **Summary card:**
-  - "N to pack" (unpacked packages).
+  - "N to pack" (unpacked packages, not counting cancelled ones).
   - "packed today" count.
   - Progress bar: packed today / (packed today + packable packages to pack).
   - When the labels were last loaded, and the window.
   - Unsent scan count, as on Pick: "N scans not sent", or "All scans sent".
   - A load that failed or timed out shows its error in red. The rest of the screen still works from the last state.
 - **To pack:** one row per package, oldest label first.
-  - Status icon: `○` not started, `◐` started, `⚠` red for cancelled, `⚠` orange for several labels.
+  - Cancelled packages are not listed here. When nothing else is left, it shows "All packed".
+  - Status icon: `○` not started, `◐` started, `⚠` orange for several labels.
   - Title: package name (`#1013 +2` for combined).
   - Subtitle: buyer, short store (`F&P`, `TTP`, `Shopify`), and 🏷 if the label is scanned.
-  - Trailing: a `Pill` with items done/total, or a red `CANCELLED` / orange `2 labels` pill.
+  - Trailing: a `Pill` with items done/total, or an orange `2 labels` pill.
   - Tap opens the package.
+- **Cancelled — do not ship:** unpacked packages with a cancelled or refunded order, always expanded, with a red `CANCELLED` pill. Mark packed (once dealt with) moves one out.
 - **Packed today:** collapsible, with the same rows, newest first. Subtitle shows the time, plus "by hand" for Mark packed.
 - **Empty states:**
   - Never loaded: "No labels loaded", with a **Load labels** button.
@@ -227,8 +231,9 @@ Pack home ──tap / scan──▶ Package ──scan another label──▶ (s
 
 | Outcome | Banner | Sound and haptic |
 |---|---|---|
-| ok (label or item counted) | green | ding + success |
-| **package complete** | green, "ALL n ITEMS ✓ — pack & stick the label" | double ding (`feedbackRepeat`) |
+| label ok (package opened) | green | box-open sound (`feedbackBoxOpen`, as Stow's box scan) |
+| item counted | green | ding + success |
+| **package complete** | green, "ALL n ITEMS ✓ — pack & stick the label" | short rising three-note chime (`feedbackPackageDone`, `package-done.mp3`) |
 | dup, ambiguous, already packed, several labels, undo | orange | warning |
 | wrong item, cancelled, unknown | red | error |
 

@@ -22,12 +22,15 @@ export default function TabsLayout() {
   const { jobs } = useUploadQueue();
   const { attention } = summarize(jobs);
 
+  // A Badge with a value ignores `hidden`, so pass no value when it's 0.
+  const badge = (n: number) => (n > 0 ? String(n) : undefined);
+
   return (
     <NativeTabs>
       <NativeTabs.Trigger name="(shoot)">
         <NativeTabs.Trigger.Icon sf={{ default: 'camera', selected: 'camera.fill' }} md="photo_camera" />
         <NativeTabs.Trigger.Label>Shoot</NativeTabs.Trigger.Label>
-        <NativeTabs.Trigger.Badge hidden={attention === 0}>{String(attention)}</NativeTabs.Trigger.Badge>
+        <NativeTabs.Trigger.Badge hidden={attention === 0}>{badge(attention)}</NativeTabs.Trigger.Badge>
       </NativeTabs.Trigger>
       {/* An open box is left with Finish, so re-tapping the tab must not pop it. */}
       <NativeTabs.Trigger name="stow" disablePopToTop>
@@ -43,12 +46,12 @@ export default function TabsLayout() {
           md="package_2"
         />
         <NativeTabs.Trigger.Label>Pick</NativeTabs.Trigger.Label>
-        <NativeTabs.Trigger.Badge hidden={toPick === 0}>{String(toPick)}</NativeTabs.Trigger.Badge>
+        <NativeTabs.Trigger.Badge hidden={toPick === 0}>{badge(toPick)}</NativeTabs.Trigger.Badge>
       </NativeTabs.Trigger>
       <NativeTabs.Trigger name="pack">
         <NativeTabs.Trigger.Icon sf={{ default: 'archivebox', selected: 'archivebox.fill' }} md="inventory" />
         <NativeTabs.Trigger.Label>Pack</NativeTabs.Trigger.Label>
-        <NativeTabs.Trigger.Badge hidden={toPack === 0}>{String(toPack)}</NativeTabs.Trigger.Badge>
+        <NativeTabs.Trigger.Badge hidden={toPack === 0}>{badge(toPack)}</NativeTabs.Trigger.Badge>
       </NativeTabs.Trigger>
     </NativeTabs>
   );
