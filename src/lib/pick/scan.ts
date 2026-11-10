@@ -8,7 +8,7 @@ export function normalizeScan(raw: string): string {
 }
 
 // PREFIX-MMDD-NNN, plus the legacy forms inventory_sync.parse_sku accepts.
-const SKU_PATTERN = /^[A-Z]+-?\d{4}-?\d+$/;
+export const SKU_PATTERN =/^[A-Z]+-?\d{4}-?\d+$/;
 
 export type ScanKind = 'box' | 'item';
 

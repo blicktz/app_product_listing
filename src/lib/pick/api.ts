@@ -15,7 +15,7 @@ const EVENTS_TIMEOUT_MS = 15_000;
 
 export const LOOKBACK_DAYS = 7;
 
-async function call<T>(
+export async function call<T>(
   baseUrl: string,
   path: string,
   timeoutMs: number,

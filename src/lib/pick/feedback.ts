@@ -28,6 +28,17 @@ export function feedbackSuccess() {
   void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 }
 
+/** A quick double ding: one more unit of something already counted. */
+export function feedbackRepeat() {
+  feedbackSuccess();
+  setTimeout(() => {
+    const p = player;
+    if (p) {
+      void p.seekTo(0).then(() => p.play());
+    }
+  }, 160);
+}
+
 export function feedbackWarning() {
   void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
 }
