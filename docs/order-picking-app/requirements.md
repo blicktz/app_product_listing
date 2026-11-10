@@ -434,7 +434,7 @@ A later pick of a missing SKU fills in `found_in_box`.
 - Lines picked but never shipped, i.e. the order was cancelled after picking. This means the item has to go back to its box.
 
 ## Out of scope
-- Packing of any kind, including a packing check, shipping labels and tracking upload. Packing is done on the Mac.
+- Packing of any kind, including a packing check, shipping labels and tracking upload. Packing is its own tab: see `docs/pack-app/requirements.md`.
 - Editing box contents in the app.
 - Multiple users.
 - Access from outside the home network.

@@ -4,6 +4,7 @@ import { startUploadQueue } from '@/lib/uploadQueue/runner';
 import { startPickStore } from '@/lib/pick/store';
 import { startShootLog } from '@/lib/shootLog/store';
 import { startStowStore } from '@/lib/stow/store';
+import { startPackStore } from '@/lib/pack/store';
 
 // Load the last pick list and send any pick events still queued on the phone.
 // First, because everything below uses the Mac address and settings it loads.
@@ -15,6 +16,8 @@ startShootLog();
 startUploadQueue();
 // Same as Pick for stow events.
 startStowStore();
+// And for pack scans.
+startPackStore();
 
 export default function RootLayout() {
   return (
@@ -33,6 +36,10 @@ export default function RootLayout() {
         />
         <Stack.Screen
           name="pick-image"
+          options={{ presentation: 'fullScreenModal', animation: 'fade' }}
+        />
+        <Stack.Screen
+          name="pack-image"
           options={{ presentation: 'fullScreenModal', animation: 'fade' }}
         />
         <Stack.Screen

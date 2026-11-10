@@ -305,5 +305,5 @@ Uses Pick's location issues table (Pick doc, "Location issues"), with new kinds 
 - Printing or generating SKU and box labels.
 - A list of expected products per batch.
 - A later physical check that rescans a box against its record. The data here supports adding it.
-- Pack.
+- Pack (its own tab: `docs/pack-app/requirements.md`).
 - Multiple users, and access from outside the home network, as with Pick.
