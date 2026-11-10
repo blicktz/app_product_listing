@@ -294,7 +294,7 @@ export default function UploadQueueScreen() {
           jobs.length > 0 ? (
             <SectionFooter>
               Queued photos are kept in the app&apos;s folder until R2 confirms them. You can
-              also reach them in the Files app under On My iPhone › product_listings ›
+              also reach them in the Files app under On My iPhone › FPops ›
               upload-queue.
             </SectionFooter>
           ) : null
