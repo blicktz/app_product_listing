@@ -33,9 +33,8 @@ type PersistedState = {
 
 export type UploadDestination = 'mac' | 'r2';
 
-// R2 until the Mac's /shoot routes are live; then this becomes 'mac'. A choice
-// made on the Mac Server screen always wins over this default.
-const DEFAULT_UPLOAD_DESTINATION: UploadDestination = 'r2';
+// A choice made on the Mac Server screen always wins over this default.
+const DEFAULT_UPLOAD_DESTINATION: UploadDestination = 'mac';
 
 export type PickSnapshot = PersistedState & {
   events: LocalEvent[];
