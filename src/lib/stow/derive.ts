@@ -194,7 +194,12 @@ export function deriveSessions(events: LocalStowEvent[]): StowSession[] {
   return [...grouped].map(([id, items]) => buildSession(id, items)).reverse();
 }
 
-export type StowLocation = { box: string; units: number | null };
+export type StowLocation = {
+  box: string;
+  units: number | null;
+  /** The box it was in before its last move, for moving it back. */
+  previous: string | null;
+};
 
 /**
  * Events the server hasn't counted in its last state: still queued, or accepted
@@ -220,7 +225,9 @@ function subtract(map: Map<string, StowLocation>, sku: string, units: number) {
 function applyLocation(
   map: Map<string, StowLocation>,
   { event: e, movedUnits }: LocalStowEvent,
-  byId: Map<string, StowEvent>
+  byId: Map<string, StowEvent>,
+  /** Each move's previous box before it happened, so undoing the move can restore it. */
+  previousBefore: Map<string, string | null>
 ) {
   if (!e.sku) {
     return;
@@ -232,15 +239,21 @@ function applyLocation(
         return;
       }
       if (e.moved_from_box) {
-        map.set(e.sku, { box: e.box_label, units: current?.units ?? movedUnits ?? null });
+        previousBefore.set(e.event_id, current?.previous ?? null);
+        map.set(e.sku, {
+          box: e.box_label,
+          units: current?.units ?? movedUnits ?? null,
+          previous: e.moved_from_box === e.box_label ? (current?.previous ?? null) : e.moved_from_box,
+        });
       } else if (current) {
         // Same box, or a box the phone didn't know about: the SKU stays in one box.
         map.set(e.sku, {
           box: e.box_label,
           units: current.units === null ? null : current.units + (e.units ?? 1),
+          previous: current.box === e.box_label ? current.previous : current.box,
         });
       } else {
-        map.set(e.sku, { box: e.box_label, units: e.units ?? 1 });
+        map.set(e.sku, { box: e.box_label, units: e.units ?? 1, previous: null });
       }
       return;
     case 'adjust': {
@@ -257,7 +270,13 @@ function applyLocation(
     case 'undo': {
       const undone = e.undoes_event_id ? byId.get(e.undoes_event_id) : undefined;
       if (undone?.action === 'stow' && undone.moved_from_box) {
-        map.set(e.sku, { box: undone.moved_from_box, units: current?.units ?? null });
+        // A move the server already counted isn't replayed here, so its earlier
+        // previous box is unknown until the next refresh.
+        map.set(e.sku, {
+          box: undone.moved_from_box,
+          units: current?.units ?? null,
+          previous: previousBefore.get(undone.event_id) ?? null,
+        });
       } else {
         subtract(map, e.sku, e.units ?? 0);
       }
@@ -276,12 +295,17 @@ export function deriveLocations(
 ): Map<string, StowLocation> {
   const map = new Map<string, StowLocation>();
   for (const location of state?.locations ?? []) {
-    map.set(location.sku.toUpperCase(), { box: location.box_label, units: location.units });
+    map.set(location.sku.toUpperCase(), {
+      box: location.box_label,
+      units: location.units,
+      previous: location.previous_box ?? null,
+    });
   }
   const byId = new Map(events.map((local) => [local.event.event_id, local.event]));
+  const previousBefore = new Map<string, string | null>();
   for (const local of events) {
     if (isUnreflected(local, fetchStartedAt)) {
-      applyLocation(map, local, byId);
+      applyLocation(map, local, byId, previousBefore);
     }
   }
   return map;

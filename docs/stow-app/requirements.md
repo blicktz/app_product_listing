@@ -95,11 +95,11 @@ Stow home ──scan box──▶ Open box ──Finish──▶ Session summary
 ┌────────────────────────────────────┐
 │ ✓ AAU-1109-012 ×2 · 2 in this box  │  green, distinct sound + haptic
 └────────────────────────────────────┘
- Already recorded in another box:
+ Already recorded in another box (moved at once):
 ┌────────────────────────────────────┐
-│ ⚠ AAU-1109-012 is in ST-GAR-AAC-002│  orange
-│   (3 units). Move them all here?   │
-│   [ No ]         [ Yes, move all ] │
+│ ⚠ AAU-1109-012 moved here          │  orange, warning sound
+│   From ST-GAR-AAC-002 · 3 units ·  │  (green "moved back here"
+│   Tap ↶ on its row to undo.        │   for its previous box)
 └────────────────────────────────────┘
  Not a SKU or box label:
 ┌────────────────────────────────────┐
@@ -138,10 +138,11 @@ Each Enter-terminated scan is cleaned up with Pick's `normalizeScan` (`src/lib/p
 |---|---|---|
 | Has the `ST-…` label shape | Opens that box. Any previously open box is closed without a separate step. An unknown label is a **new box** | `box_open` |
 | An old short ID listed by `GET /stow-state` | Opens that box, using its printed label | `box_open` |
-| SKU shape (Pick's `SKU_PATTERN`), no box open | Rejected: "Scan a box first" | `reject` |
+| SKU shape (Pick's `SKU_PATTERN`), no box open, recorded in a box | Lookup: "SKU is in BOX", with its units and previous box ([move-back.md](move-back.md)) | none |
+| SKU shape, no box open, not recorded anywhere | Rejected: "Scan a box first" | `reject` |
 | SKU shape, box open, not recorded anywhere | Stowed, 1 unit | `stow` |
 | SKU shape, already in the open box | 1 more unit | `stow` |
-| SKU shape, recorded in a different box | Prompt: "Move them all here?" Yes moves the SKU and all its units here, No leaves it where it was | `stow` with `moved_from_box`, or `move_declined` |
+| SKU shape, recorded in a different box | Moved here at once, with all its units, without asking: orange "moved here", or green "moved back here" when the open box is its previous box ([move-back.md](move-back.md)). A mistake is undone with `↶` on the row | `stow` with `moved_from_box` |
 | Quantity set on a row (not a scan) | Row changes to the typed number | `adjust` |
 | Anything else | Rejected: "Unrecognised barcode" | `reject` |
 
@@ -212,7 +213,7 @@ What the phone needs to label boxes and detect moves. Loaded on Refresh and cach
 }
 ```
 - `boxes`: every box the location table holds or has ever held, so a box emptied by picking is still `Existing`.
-- `locations`: every SKU currently in the location table, with its box and units.
+- `locations`: every SKU currently in the location table, with its box and units, and `previous_box` (the box before its last move, or null). See [move-back.md](move-back.md).
 
 #### 3. `GET /stow-audit`
 Read-only. Answers the acceptance questions as JSON. Takes one of:
@@ -288,7 +289,7 @@ The ledger is append-only too. Together with the seed import, the events must be
 ### 4. Location issues
 Uses Pick's location issues table (Pick doc, "Location issues"), with new kinds raised by Stow:
 - `stow_conflict`: a stow of a SKU recorded in another box, where the phone hadn't known. Includes the old box, the new box and the `event_id`.
-- `move_declined`: a move was refused, so the physical location needs checking.
+- `move_declined`: a move was refused, so the physical location needs checking. The phone no longer sends this event, because moves happen without asking, but older events may still have it.
 
 ### Questions this must answer (acceptance)
 - **Given a SKU**: every stow, quantity adjustment, move, undo, pick and pick undo, with the box, time and device, and its box and unit count now.

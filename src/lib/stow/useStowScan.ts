@@ -15,18 +15,13 @@ import { currentLocations, currentSession, getSnapshot, recordStowEvent } from '
 
 const AUTO_HIDE_MS = 3500;
 
-type PendingMove = {
-  sku: string;
-  box: string;
-  from: string;
-  code: string | null;
-  method: 'scan' | 'manual';
-};
+function unitCount(units: number | null): string | null {
+  return units === null ? null : `${units} ${units === 1 ? 'unit' : 'units'}`;
+}
 
 export function useStowScan() {
   const [banner, setBanner] = useState<Banner | null>(null);
   const nextId = useRef(1);
-  const pendingMove = useRef<PendingMove | null>(null);
 
   useEffect(() => {
     preparePickFeedback();
@@ -43,34 +38,32 @@ export function useStowScan() {
   const show = (b: Omit<Banner, 'id'>) => setBanner({ ...b, id: nextId.current++ });
   const dismiss = () => setBanner(null);
 
-  /** A move question left unanswered still has to be on record: the item stayed put. */
-  const declinePendingMove = (note: string | null) => {
-    const pending = pendingMove.current;
-    if (!pending) {
-      return;
-    }
-    pendingMove.current = null;
-    recordStowEvent({
-      action: 'move_declined',
-      boxLabel: pending.box,
-      sku: pending.sku,
-      movedFromBox: pending.from,
-      method: pending.method,
-      scannedValue: pending.code,
-      note,
-    });
-  };
-
   const openBox = (label: string, code: string) => {
-    declinePendingMove('replaced by the next scan');
     recordStowEvent({ action: 'box_open', boxLabel: label, scannedValue: code });
     feedbackBoxOpen();
     show({ tone: 'success', title: `${label} open`, detail: 'Scan items into this box.' });
   };
 
   const stowSku = (sku: string, code: string | null, method: 'scan' | 'manual') => {
-    declinePendingMove('replaced by the next scan');
     const box = currentSession()?.openBox ?? null;
+    const known = currentLocations().get(sku);
+    if (!box && known) {
+      // A lookup only, so nothing is recorded. It stays up while the box is found.
+      feedbackRepeat();
+      show({
+        tone: 'success',
+        title: `${sku} is in ${known.box}`,
+        detail: [
+          unitCount(known.units),
+          known.previous ? `Previous box ${known.previous}` : null,
+          'Scan a box to stow or move it.',
+        ]
+          .filter(Boolean)
+          .join(' · '),
+        actions: [{ label: 'OK', primary: true, onPress: dismiss }],
+      });
+      return;
+    }
     if (!box) {
       feedbackError();
       recordStowEvent({ action: 'reject', sku, method, scannedValue: code, note: 'no box open' });
@@ -78,48 +71,29 @@ export function useStowScan() {
       return;
     }
 
-    const known = currentLocations().get(sku);
     if (known && known.box !== box) {
-      feedbackWarning();
-      pendingMove.current = { sku, box, from: known.box, code, method };
+      // Moved at once, with all its units. A mistake is undone with ↶ on its row.
+      recordStowEvent({
+        action: 'stow',
+        boxLabel: box,
+        sku,
+        movedFromBox: known.box,
+        movedUnits: known.units,
+        method,
+        scannedValue: code,
+      });
+      const back = known.previous === box;
+      if (back) {
+        feedbackSuccess();
+      } else {
+        feedbackWarning();
+      }
       show({
-        tone: 'warning',
-        title: `${sku} is in ${known.box}`,
-        detail:
-          known.units === null
-            ? 'Move it here?'
-            : `${known.units} ${known.units === 1 ? 'unit' : 'units'}. Move them all here?`,
-        actions: [
-          {
-            label: 'No',
-            onPress: () => {
-              declinePendingMove(null);
-              dismiss();
-            },
-          },
-          {
-            label: 'Yes, move all',
-            primary: true,
-            onPress: () => {
-              pendingMove.current = null;
-              recordStowEvent({
-                action: 'stow',
-                boxLabel: box,
-                sku,
-                movedFromBox: known.box,
-                movedUnits: known.units,
-                method,
-                scannedValue: code,
-              });
-              feedbackSuccess();
-              show({
-                tone: 'success',
-                title: `${sku} moved here`,
-                detail: known.units === null ? undefined : `×${known.units}`,
-              });
-            },
-          },
-        ],
+        tone: back ? 'success' : 'warning',
+        title: back ? `${sku} moved back here` : `${sku} moved here`,
+        detail: [`From ${known.box}`, unitCount(known.units), 'Tap ↶ on its row to undo.']
+          .filter(Boolean)
+          .join(' · '),
       });
       return;
     }
@@ -150,7 +124,6 @@ export function useStowScan() {
         stowSku(result.sku, code, 'scan');
         return;
       case 'invalid':
-        declinePendingMove('replaced by the next scan');
         feedbackError();
         recordStowEvent({
           action: 'reject',
@@ -214,7 +187,6 @@ export function useStowScan() {
     if (!session) {
       return null;
     }
-    declinePendingMove('session finished');
     dismiss();
     recordStowEvent({ action: 'session_end', method: 'manual' });
     return session.id;

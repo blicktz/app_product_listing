@@ -41,6 +41,8 @@ export type StowStateLocation = {
   box_label: string;
   /** null = count unknown. */
   units: number | null;
+  /** Box before its last move; null or missing when there isn't one. See docs/stow-app/move-back.md. */
+  previous_box?: string | null;
 };
 
 export type StowServerState = {
