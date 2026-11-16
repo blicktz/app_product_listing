@@ -55,6 +55,6 @@ export type LocalStowEvent = {
   event: StowEvent;
   /** ms when the Mac accepted it; null while queued. */
   acceptedAt: number | null;
-  /** Phone-only: how many units a confirmed move carried, for the row's label. */
+  /** Phone-only: the SKU's count in the old box before a confirmed move (null: unknown), restored by its undo. */
   movedUnits?: number | null;
 };

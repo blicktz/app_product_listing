@@ -81,7 +81,7 @@ Stow home ──scan box──▶ Open box ──Finish──▶ Session summary
   - It opens an **in-app number pad**, because iOS hides the on-screen keyboard while the scanner is connected.
   - A scan while the pad is open closes the pad without changing the quantity, then is handled as normal.
 - `↶` takes the whole row back, including all its units.
-- A row created by a move shows `moved ×N` and has no quantity input.
+- A row created by a move shows `moved ×1` (the count restarts at 1 in the new box) and has no quantity input. The remaining units are scanned one at a time and go on a normal row below it.
 - **Enter SKU**: for an unreadable label. Recorded as `method: manual`. As with search on Pick, typing uses the scanner's keyboard toggle (double-press the trigger).
 - The tag is left out if `GET /stow-state` has never loaded.
 
@@ -142,18 +142,18 @@ Each Enter-terminated scan is cleaned up with Pick's `normalizeScan` (`src/lib/p
 | SKU shape, no box open, not recorded anywhere | Rejected: "Scan a box first" | `reject` |
 | SKU shape, box open, not recorded anywhere | Stowed, 1 unit | `stow` |
 | SKU shape, already in the open box | 1 more unit | `stow` |
-| SKU shape, recorded in a different box | Moved here at once, with all its units, without asking: orange "moved here", or green "moved back here" when the open box is its previous box ([move-back.md](move-back.md)). A mistake is undone with `↶` on the row | `stow` with `moved_from_box` |
+| SKU shape, recorded in a different box | Moved here at once, without asking. The count starts at 1; scan each remaining unit. Banner: orange "moved here", or green "moved back here" when the open box is its previous box ([move-back.md](move-back.md)), with the old count, e.g. `From ST-GAR-SSS-004 · had 3. Count restarts at 1. Scan every remaining unit, one scan each.`. A mistake is undone with `↶` on the row | `stow` with `moved_from_box` |
 | Quantity set on a row (not a scan) | Row changes to the typed number | `adjust` |
 | Anything else | Rejected: "Unrecognised barcode" | `reject` |
 
-- **A SKU has a unit count and lives in one box.** Scanning it twice means quantity 2. Its units are never split across boxes, which is why a different box prompts for a move of all units.
+- **A SKU has a unit count and lives in one box.** Scanning it twice means quantity 2. Its units are never split across boxes, so a scan in a different box moves the SKU's whole record there, and the count restarts at 1. **When moving a SKU, scan every unit, one at a time.** Stopping partway leaves the count too low, never too high.
 - A repeat scan has its own sound and the banner shows the new quantity, so an accidental double scan is noticed and can be corrected on the row.
-- After a move, scanning the SKU again adds units in the normal way, on a new row.
+- After a move, scanning the SKU again adds 1 unit per scan in the normal way, on a new row.
 - "Anything else" is stricter than Pick, where unknown text is treated as a box. Stow has no list to catch a misread, so unrecognised text must not open a box or be stowed.
 - An old short ID that the server doesn't list is rejected, because the app can't tell which room it's in.
 - A scan of a box that's already open does nothing and records nothing.
 - "Recorded in a different box" is checked against this phone's own events plus the last `GET /stow-state`. The server also checks every stow when it arrives. See [Location table changes](#location-table-changes-stow-and-pick).
-- **Undo** (`↶`) records one `undo` event for the row, with the row's units. Undoing a move puts the SKU and all its units back on record in its previous box.
+- **Undo** (`↶`) records one `undo` event for the row, with the row's units. Undoing a move puts the SKU back on record in its previous box with the count it had there (a number or unknown). Units scanned into the new box after the move go back with it, so their rows disappear too.
 
 ## Scanner input handling
 As Pick: a hidden text field stays focused while the Stow tab is in front, scans are trimmed and upper-cased, and scans must still work with a Chinese (pinyin) keyboard active. Reuse `src/components/pick/ScanCapture.tsx`. Only the tab in front handles scans.
@@ -186,7 +186,7 @@ Uploads the stow log as a batch.
     "action": "box_open | stow | adjust | undo | move_declined | reject | session_end",
     "box_label": "ST-GAR-AAC-001 (box open when it happened, null if none)",
     "sku": "AAU-1109-012 (null for box_open, session_end and an unclassifiable reject)",
-    "units": "stow: 1 (null for a confirmed move). adjust: signed change, e.g. 4 for ×1 → ×5. undo: units taken back",
+    "units": "stow: 1 (also 1 for a confirmed move; older builds sent null, which the server reads as 1). adjust: signed change, e.g. 4 for ×1 → ×5. undo: units taken back",
     "moved_from_box": "box it was recorded in, for a confirmed move or move_declined",
     "undoes_event_id": "undo only: the row's most recent stow or adjust, or the move being undone",
     "method": "scan | manual",
@@ -231,9 +231,9 @@ The portal already has a database table imported from `Inventory_locations.csv`.
 
 1. **Read from the table.** `GET /pick-list` (`box_id`, `other_boxes`, `nearby_boxes`) and `export-awaiting-shipment` must resolve locations from the location table.
 2. **A `stow` adds its `units`** to that SKU in that box, creating the row if needed.
-   - **A confirmed move** (`moved_from_box` set) moves the SKU's row, with all its units, to the new box. The count doesn't change.
-   - **A stale phone**: if the SKU is recorded in another box but the event has no `moved_from_box`, the existing units move to the new box, the event's `units` are added, and a location issue is raised. A SKU never ends up with rows in two boxes.
-3. **An `adjust` adds its signed `units`** to the SKU's count. A stow `undo` subtracts its `units`, or returns the SKU and all its units to the previous box if it undoes a move.
+   - **A confirmed move** (`moved_from_box` set) moves the SKU's one row to the new box and its count **starts at 1** (the event's `units`), whatever it was before. Each further scan in the new box adds 1. The old count is kept in the ledger. A move into the box the SKU is already in changes nothing.
+   - **A stale phone**: if the SKU is recorded in another box but the event has no `moved_from_box`, it is the same move, with the count starting at the event's `units`, and a `stow_conflict` location issue is raised. A SKU never ends up with rows in two boxes.
+3. **An `adjust` adds its signed `units`** to the SKU's count. A stow `undo` subtracts its `units`, or, if it undoes a move, returns the SKU to the previous box with the count it had there (from the ledger; the event's `units` are ignored), taking back units scanned in after the move.
 4. **Picking subtracts the order's quantity from the SKU's unit count.** The app sends one `pick` event per unit scanned, so **each `pick` event subtracts 1**, and a fully picked line has subtracted its `qty`.
    - The unit comes off the SKU's one row, including for a pick from an unexpected box. That pick still raises Pick's location issue.
    - A row is deleted when its count reaches 0. A SKU with units left stays in its box and on later pick lists.

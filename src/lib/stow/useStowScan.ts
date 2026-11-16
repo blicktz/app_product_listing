@@ -72,11 +72,13 @@ export function useStowScan() {
     }
 
     if (known && known.box !== box) {
-      // Moved at once, with all its units. A mistake is undone with ↶ on its row.
+      // Moved at once. The count restarts at 1 and each remaining unit is scanned.
+      // The old count is kept so ↶ on its row can put it back.
       recordStowEvent({
         action: 'stow',
         boxLabel: box,
         sku,
+        units: 1,
         movedFromBox: known.box,
         movedUnits: known.units,
         method,
@@ -91,9 +93,9 @@ export function useStowScan() {
       show({
         tone: back ? 'success' : 'warning',
         title: back ? `${sku} moved back here` : `${sku} moved here`,
-        detail: [`From ${known.box}`, unitCount(known.units), 'Tap ↶ on its row to undo.']
+        detail: `${[`From ${known.box}`, known.units === null ? null : `had ${known.units}`]
           .filter(Boolean)
-          .join(' · '),
+          .join(' · ')}. Count restarts at 1. Scan every remaining unit, one scan each.`,
       });
       return;
     }

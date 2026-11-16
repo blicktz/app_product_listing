@@ -9,12 +9,12 @@ So the server must **remember each SKU's previous box**, which is the box it was
 
 Decisions already made:
 - There are no special staging boxes. The Whatnot box is an ordinary storage box with a printed `ST-…` label. "Previous box" is just the box the SKU was in before its last move.
-- All units still move together. Stow never splits a SKU across boxes.
+- The SKU's whole record moves. Stow never splits a SKU across boxes. Since 2026-11-16 the count restarts at 1 in the new box and each remaining unit is scanned (see `requirements.md`).
 - Picking Whatnot orders is a separate workflow. Pick is unchanged.
 
 ## What the phone does with it (for context)
 - **Lookup.** On the Stow home screen, with no box open, scanning a SKU that's recorded in a box shows "SKU is in BOX", its units, and its previous box. Nothing is recorded, because it's only a lookup. A SKU recorded nowhere is still rejected with "Scan a box first", as before.
-- **Moves happen without asking.** With a box open, scanning a SKU recorded in another box moves it and all its units straight away. There's no "Move them all here?" prompt any more. A mistaken move is undone with `↶` on its row. The banner is green "moved back here" when the open box is the SKU's previous box, and orange "moved here" otherwise.
+- **Moves happen without asking.** With a box open, scanning a SKU recorded in another box moves it straight away, with its count restarting at 1; the remaining units are then scanned one by one. There's no "Move them all here?" prompt any more. A mistaken move is undone with `↶` on its row. The banner is green "moved back here" when the open box is the SKU's previous box, and orange "moved here" otherwise.
 - So the phone **no longer sends `move_declined`**. Every other event is unchanged. A move back is an ordinary move (`stow` with `moved_from_box`).
 
 ## Server changes
@@ -56,8 +56,8 @@ For SKUs already in the table, set `previous_box` from the ledger: the box befor
 
 ## Acceptance
 1. Stow SKU X into box A. `previous_box` is `null`.
-2. Move X to box W. `box_label` = W, `previous_box` = A, and the units are unchanged.
-3. Undo that move. `box_label` = A, `previous_box` = `null`, which was its value before the move.
+2. Move X to box W. `box_label` = W, `previous_box` = A, and the units are 1 (each further scan in W adds 1).
+3. Undo that move. `box_label` = A, `previous_box` = `null`, which was its value before the move, and the units are back to the count it had in A.
 4. Move X to W again, then move it back to A. `box_label` = A, `previous_box` = W.
 5. Stow one more unit of X into A, or adjust its count. `previous_box` stays W.
 6. Pick X until its count reaches 0. The row is gone. Stow it again into B: `previous_box` = `null`.

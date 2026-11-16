@@ -1,4 +1,4 @@
-import type { LocalStowEvent, StowEvent, StowServerState } from './types';
+import type { LocalStowEvent, StowServerState } from './types';
 
 // Everything shown on the Stow screens is worked out from the event log, so a
 // restart restores the open box and an undo needs no separate bookkeeping.
@@ -8,7 +8,7 @@ export type StowRow = {
   boxLabel: string;
   sku: string;
   kind: 'stow' | 'move';
-  /** null: a move whose unit count isn't known. */
+  /** Can be null in rows from older data; a move now starts at 1. */
   units: number | null;
   /** Time of the latest scan. */
   at: string;
@@ -18,7 +18,7 @@ export type StowRow = {
   lastEventId: string;
   /** Orders rows newest first. A quantity edit doesn't reorder them. */
   scanSeq: number;
-  /** The move that took this row's units to another box. */
+  /** The move that took this row's units to another box, or the undo of the move that brought them here. */
   hiddenBy: string | null;
 };
 
@@ -64,7 +64,7 @@ function buildSession(id: string, items: LocalStowEvent[]): StowSession {
   const liveRow = (box: string | null, sku: string | null) =>
     rows.find((r) => r.kind === 'stow' && r.hiddenBy === null && r.boxLabel === box && r.sku === sku);
 
-  for (const { event: e, movedUnits } of items) {
+  for (const { event: e } of items) {
     switch (e.action) {
       case 'box_open':
         openBox = e.box_label;
@@ -90,7 +90,8 @@ function buildSession(id: string, items: LocalStowEvent[]): StowSession {
             boxLabel: e.box_label,
             sku: e.sku,
             kind: 'move',
-            units: movedUnits ?? null,
+            // The count restarts at 1 in the new box; each remaining unit is scanned.
+            units: e.units ?? 1,
             at: e.at,
             method: e.method,
             movedFrom: e.moved_from_box,
@@ -140,6 +141,16 @@ function buildSession(id: string, items: LocalStowEvent[]): StowSession {
             for (const other of rows) {
               if (other.hiddenBy === row.lastEventId) {
                 other.hiddenBy = null;
+              } else if (
+                // Units scanned into the new box after the move go back with it,
+                // as the server restores the old count.
+                other.hiddenBy === null &&
+                other.kind === 'stow' &&
+                other.sku === row.sku &&
+                other.boxLabel === row.boxLabel &&
+                other.scanSeq > row.scanSeq
+              ) {
+                other.hiddenBy = e.event_id;
               }
             }
           }
@@ -224,8 +235,8 @@ function subtract(map: Map<string, StowLocation>, sku: string, units: number) {
 
 function applyLocation(
   map: Map<string, StowLocation>,
-  { event: e, movedUnits }: LocalStowEvent,
-  byId: Map<string, StowEvent>,
+  { event: e }: LocalStowEvent,
+  byId: Map<string, LocalStowEvent>,
   /** Each move's previous box before it happened, so undoing the move can restore it. */
   previousBefore: Map<string, string | null>
 ) {
@@ -242,15 +253,19 @@ function applyLocation(
         previousBefore.set(e.event_id, current?.previous ?? null);
         map.set(e.sku, {
           box: e.box_label,
-          units: current?.units ?? movedUnits ?? null,
+          // The count restarts at 1 in the new box; each remaining unit is scanned.
+          units: e.units ?? 1,
           previous: e.moved_from_box === e.box_label ? (current?.previous ?? null) : e.moved_from_box,
         });
       } else if (current) {
         // Same box, or a box the phone didn't know about: the SKU stays in one box.
+        // As on the server, a stow onto an unknown count sets it, and a stow into
+        // another box is a move whose count starts at the stowed units.
+        const same = current.box === e.box_label;
         map.set(e.sku, {
           box: e.box_label,
-          units: current.units === null ? null : current.units + (e.units ?? 1),
-          previous: current.box === e.box_label ? current.previous : current.box,
+          units: !same || current.units === null ? (e.units ?? 1) : current.units + (e.units ?? 1),
+          previous: same ? current.previous : current.box,
         });
       } else {
         map.set(e.sku, { box: e.box_label, units: e.units ?? 1, previous: null });
@@ -268,13 +283,16 @@ function applyLocation(
       return;
     }
     case 'undo': {
-      const undone = e.undoes_event_id ? byId.get(e.undoes_event_id) : undefined;
+      const local = e.undoes_event_id ? byId.get(e.undoes_event_id) : undefined;
+      const undone = local?.event;
       if (undone?.action === 'stow' && undone.moved_from_box) {
-        // A move the server already counted isn't replayed here, so its earlier
-        // previous box is unknown until the next refresh.
+        // Back with the count it had in the old box (null: unknown), which also
+        // takes back units scanned in after the move. A move the server already
+        // counted isn't replayed here, so its earlier previous box is unknown
+        // until the next refresh.
         map.set(e.sku, {
           box: undone.moved_from_box,
-          units: current?.units ?? null,
+          units: local?.movedUnits ?? null,
           previous: previousBefore.get(undone.event_id) ?? null,
         });
       } else {
@@ -301,7 +319,7 @@ export function deriveLocations(
       previous: location.previous_box ?? null,
     });
   }
-  const byId = new Map(events.map((local) => [local.event.event_id, local.event]));
+  const byId = new Map(events.map((local) => [local.event.event_id, local]));
   const previousBefore = new Map<string, string | null>();
   for (const local of events) {
     if (isUnreflected(local, fetchStartedAt)) {

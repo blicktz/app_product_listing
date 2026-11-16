@@ -62,10 +62,16 @@ export default function StowBoxScreen() {
   };
 
   const askUndo = (row: StowRow) =>
-    Alert.alert(row.kind === 'move' ? 'Undo this move?' : 'Take this row back?', row.sku, [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Undo', style: 'destructive', onPress: () => undoRow(row) },
-    ]);
+    Alert.alert(
+      row.kind === 'move' ? 'Undo this move?' : 'Take this row back?',
+      row.kind === 'move' && row.movedFrom
+        ? `${row.sku} goes back to ${row.movedFrom} with its old count. Units scanned here since go back too.`
+        : row.sku,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Undo', style: 'destructive', onPress: () => undoRow(row) },
+      ]
+    );
 
   const askSku = () => {
     setPromptOpen(true);
