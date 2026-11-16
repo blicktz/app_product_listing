@@ -6,6 +6,8 @@ export default function PickLayout() {
     <Stack
       screenOptions={{
         headerBackButtonDisplayMode: 'minimal',
+        // Content scrolls under a translucent bar, as on the large-title screens.
+        headerTransparent: true,
         contentStyle: { backgroundColor: colors.background },
       }}
     >

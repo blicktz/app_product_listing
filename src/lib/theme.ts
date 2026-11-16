@@ -1,4 +1,5 @@
-import { PlatformColor, StyleSheet, type TextStyle } from 'react-native';
+import { PlatformColor, StyleSheet, type ColorSchemeName, type TextStyle } from 'react-native';
+import { DarkTheme, DefaultTheme } from 'expo-router';
 
 // iOS semantic colors: follow light/dark mode and accessibility contrast
 // settings automatically, like the system apps.
@@ -17,6 +18,26 @@ export const colors = {
   red: PlatformColor('systemRed'),
   white: '#ffffff',
 };
+
+// Navigation headers, back buttons and sheets take their colours from this theme,
+// not from `colors`: header options become plain native colours, and a
+// PlatformColor doesn't survive that. These are the plain values of the iOS
+// colours used above, per appearance. See docs/dark-mode-headers.md.
+export function navigationTheme(scheme: ColorSchemeName) {
+  const dark = scheme === 'dark';
+  const base = dark ? DarkTheme : DefaultTheme;
+  return {
+    ...base,
+    colors: {
+      ...base.colors,
+      primary: dark ? '#0A84FF' : '#007AFF', // systemBlue
+      background: dark ? '#000000' : '#F2F2F7', // systemGroupedBackground
+      card: dark ? '#000000' : '#F2F2F7', // an opaque bar blends with the screen
+      text: dark ? '#FFFFFF' : '#000000', // label
+      border: dark ? '#38383A' : '#C6C6C8', // opaque separator
+    },
+  };
+}
 
 // Tinted fills for status pills and cards (system colors at low opacity).
 export const tints = {

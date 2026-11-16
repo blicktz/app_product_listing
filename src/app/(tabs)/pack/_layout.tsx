@@ -6,6 +6,8 @@ export default function PackLayout() {
     <Stack
       screenOptions={{
         headerBackButtonDisplayMode: 'minimal',
+        // Content scrolls under a translucent bar, as on the large-title screens.
+        headerTransparent: true,
         contentStyle: { backgroundColor: colors.background },
       }}
     >

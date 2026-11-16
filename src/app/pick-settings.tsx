@@ -1,10 +1,11 @@
 import { useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { DEFAULT_SERVER_URL, checkHealth } from '@/lib/pick/api';
 import { setServerUrl, setUploadDestination, type UploadDestination } from '@/lib/pick/store';
 import { usePickSnapshot } from '@/lib/pick/usePick';
 import { retryAll } from '@/lib/uploadQueue/runner';
+import { colors, shared } from '@/lib/theme';
 
 const DESTINATIONS: { value: UploadDestination; label: string }[] = [
   { value: 'mac', label: 'Mac' },
@@ -37,7 +38,13 @@ export default function PickSettingsScreen() {
   };
 
   return (
-    <View style={styles.container}>
+    // Scrolls under the translucent sheet header.
+    <ScrollView
+      style={shared.screen}
+      contentContainerStyle={styles.container}
+      contentInsetAdjustmentBehavior="automatic"
+      keyboardShouldPersistTaps="handled"
+    >
       <Text style={styles.label}>Server URL</Text>
       <TextInput
         style={styles.input}
@@ -47,6 +54,7 @@ export default function PickSettingsScreen() {
           setResult(null);
         }}
         placeholder="http://Pengs-Mac-Studio.local:8791"
+        placeholderTextColor={colors.tertiaryLabel}
         autoCapitalize="none"
         autoCorrect={false}
         keyboardType="url"
@@ -96,20 +104,18 @@ export default function PickSettingsScreen() {
       <Text style={styles.help}>
         Applies straight away. A job that has started uploading finishes where it started.
       </Text>
-    </View>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
     padding: 20,
     gap: 12,
-    backgroundColor: '#fff',
   },
   label: {
     fontSize: 13,
-    color: '#8e8e93',
+    color: colors.secondaryLabel,
     textTransform: 'uppercase',
   },
   section: {
@@ -118,14 +124,16 @@ const styles = StyleSheet.create({
   input: {
     height: 48,
     borderWidth: 1,
-    borderColor: '#d1d1d6',
+    borderColor: colors.separator,
     borderRadius: 8,
     paddingHorizontal: 14,
     fontSize: 17,
+    color: colors.label,
+    backgroundColor: colors.card,
   },
   help: {
     fontSize: 13,
-    color: '#636366',
+    color: colors.secondaryLabel,
   },
   row: {
     flexDirection: 'row',
@@ -136,28 +144,30 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#d1d1d6',
+    borderColor: colors.separator,
+    backgroundColor: colors.card,
     alignItems: 'center',
   },
   buttonText: {
     fontSize: 16,
     fontWeight: '600',
+    color: colors.label,
   },
   primary: {
-    backgroundColor: '#208AEF',
-    borderColor: '#208AEF',
+    backgroundColor: colors.blue,
+    borderColor: colors.blue,
   },
   primaryText: {
-    color: '#fff',
+    color: colors.white,
   },
   ok: {
     fontSize: 15,
-    color: '#16a34a',
+    color: colors.green,
     fontWeight: '600',
   },
   fail: {
     fontSize: 15,
-    color: '#dc2626',
+    color: colors.red,
     fontWeight: '600',
   },
 });
