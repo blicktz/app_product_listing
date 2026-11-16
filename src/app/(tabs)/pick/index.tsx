@@ -16,6 +16,8 @@ import { ScanBanner } from '@/components/pick/ScanBanner';
 import { ScanCapture } from '@/components/pick/ScanCapture';
 import { Button, Card, EmptyState, Pill, ProgressBar, Row, SectionFooter, SectionHeader, Icon } from '@/components/ui';
 import { groupColumns, isDone, labelSku, type BoxGroup } from '@/lib/pick/derive';
+import { groupOrphans, type OrphanDay } from '@/lib/pick/orphans';
+import { usePackData } from '@/lib/pack/usePack';
 import { dismissOrphan, refreshPickList } from '@/lib/pick/store';
 import { colors, shared, tabular, tints, type } from '@/lib/theme';
 import { usePickData } from '@/lib/pick/usePick';
@@ -73,6 +75,37 @@ function BoxRow({ box, onPress }: { box: BoxGroup; onPress: () => void }) {
   );
 }
 
+function OrphanDayGroup({ day, open, onToggle }: { day: OrphanDay; open: boolean; onToggle: () => void }) {
+  return (
+    <View>
+      <Pressable style={styles.dayHeader} onPress={onToggle}>
+        <Text style={styles.dayHeaderText}>
+          {day.label} · {day.items.length}
+        </Text>
+        <Icon name={open ? 'chevron.down' : 'chevron.right'} color={colors.secondaryLabel} size={12} weight="semibold" />
+      </Pressable>
+      {open ? (
+        <Card>
+          {day.items.map(({ orphan: o, box, cancelled, lineChanged }) => (
+            <Row
+              key={o.line.line_key}
+              title={`${labelSku(o.line.sku)} → ${box ?? 'no box'}`}
+              subtitle={
+                cancelled
+                  ? `Order cancelled · ${o.line.title}`
+                  : lineChanged
+                    ? `Line changed on the order, check first · ${o.line.title}`
+                    : o.line.title
+              }
+              trailing={<Button label="Put back" tone="neutral" onPress={() => dismissOrphan(o.line.line_key)} />}
+            />
+          ))}
+        </Card>
+      ) : null}
+    </View>
+  );
+}
+
 function HeaderButtons() {
   const router = useRouter();
   const { snap } = usePickData();
@@ -116,6 +149,13 @@ export default function PickHomeScreen() {
   const { snap, states, boxes } = usePickData();
   const { banner, dismiss, handleScan } = useScanHandler({ boxId: null, openBoxMode: 'push' });
   const [doneOpen, setDoneOpen] = useState(false);
+  // Days opened or closed by hand; otherwise only the newest day is open.
+  const [dayOpen, setDayOpen] = useState<Record<string, boolean>>({});
+  const { board } = usePackData();
+  const orphanGroups = useMemo(
+    () => groupOrphans(snap.orphans, snap.list?.gone_orders, board.packages),
+    [snap.orphans, snap.list?.gone_orders, board.packages]
+  );
   const [flash, setFlash] = useState(false);
 
   const { columns, done } = useMemo(() => groupColumns(boxes), [boxes]);
@@ -284,22 +324,24 @@ export default function PickHomeScreen() {
               </View>
             ) : null}
 
-            {snap.orphans.length > 0 ? (
+            {orphanGroups.count > 0 ? (
               <View>
-                <SectionHeader color={colors.orange}>Picked, order gone</SectionHeader>
-                <Card>
-                  {snap.orphans.map((o) => (
-                    <Row
-                      key={o.line.line_key}
-                      title={`${labelSku(o.line.sku)} → ${o.line.box_id ?? 'no box'}`}
-                      subtitle={o.line.title}
-                      trailing={
-                        <Button label="Put back" tone="neutral" onPress={() => dismissOrphan(o.line.line_key)} />
-                      }
-                    />
-                  ))}
-                </Card>
-                <SectionFooter>Cancelled or shipped after picking. Return these to their box.</SectionFooter>
+                <SectionHeader color={colors.orange}>
+                  Picked, order gone · {plural(orphanGroups.count, 'item')}
+                </SectionHeader>
+                {orphanGroups.days.map((day, i) => (
+                  <OrphanDayGroup
+                    key={day.key}
+                    day={day}
+                    open={dayOpen[day.key] ?? i === 0}
+                    onToggle={() => setDayOpen((v) => ({ ...v, [day.key]: !(v[day.key] ?? i === 0) }))}
+                  />
+                ))}
+                <SectionFooter>
+                  Picked, then the order left the list without shipping. If it was cancelled, return the item to its
+                  box. Shipped orders aren&apos;t listed
+                  {orphanGroups.shipped > 0 ? ` (${orphanGroups.shipped} hidden)` : ''}. Items drop off after 7 days.
+                </SectionFooter>
               </View>
             ) : null}
 
@@ -438,6 +480,19 @@ const styles = StyleSheet.create({
     ...type.footnote,
     color: colors.secondaryLabel,
     textTransform: 'uppercase',
+  },
+  dayHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 10,
+    marginBottom: 6,
+    marginHorizontal: 32,
+  },
+  dayHeaderText: {
+    ...type.footnote,
+    fontWeight: '600',
+    color: colors.secondaryLabel,
   },
   emptyActions: {
     gap: 10,

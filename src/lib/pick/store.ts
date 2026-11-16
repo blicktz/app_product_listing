@@ -4,6 +4,7 @@ import { Directory, File, Paths } from 'expo-file-system';
 import { DEFAULT_SERVER_URL, checkHealth, fetchPickList, postPickEvents } from './api';
 import { deriveLineStates, isDone, type LineState, type LocalEvent } from './derive';
 import { cleanupImages, prefetchImages } from './images';
+import { isRecentOrphan } from './orphans';
 import type { PickAction, PickEvent, PickLine, PickList } from './types';
 
 // Picking state, kept on disk under Documents/pick/ so a pick is never lost to
@@ -20,7 +21,24 @@ export type OrphanLine = {
   line: PickLine;
   pickedQty: number;
   removedAt: string;
+  /**
+   * The box it was picked from, where it goes back. The line's own box_id isn't
+   * enough: picking a box's last unit removes the box from the location record,
+   * so later lists show no box. Missing on lines saved by older builds.
+   */
+  pickedFromBox?: string | null;
 };
+
+/** The box of this phone's latest pick of the line, if it still has the event. */
+function lastPickedBox(lineKey: string): string | null {
+  for (let i = events.length - 1; i >= 0; i--) {
+    const { event } = events[i];
+    if (event.line_key === lineKey && event.action === 'pick' && event.box_id) {
+      return event.box_id;
+    }
+  }
+  return null;
+}
 
 type PersistedState = {
   list: PickList | null;
@@ -145,6 +163,9 @@ export function startPickStore() {
   started = true;
   state = { ...state, ...(readJson<PersistedState>(STATE_FILE) ?? {}) };
   events = readJson<LocalEvent[]>(EVENTS_FILE) ?? [];
+  state.orphans = state.orphans
+    .filter((o) => isRecentOrphan(o, Date.now()))
+    .map((o) => (o.pickedFromBox ? o : { ...o, pickedFromBox: lastPickedBox(o.line.line_key) }));
   const settings = readJson<{ serverUrl?: string; uploadDestination?: UploadDestination }>(SETTINGS_FILE);
   if (settings?.serverUrl) {
     serverUrl = settings.serverUrl;
@@ -313,7 +334,8 @@ export async function refreshPickList(resync: boolean): Promise<void> {
     const list = await fetchPickList(serverUrl, resync);
     const newKeys = new Set(list.lines.map((line) => line.line_key));
 
-    const orphans = state.orphans.filter((o) => !newKeys.has(o.line.line_key));
+    // Back on the list, or older than a week: no longer shown.
+    const orphans = state.orphans.filter((o) => !newKeys.has(o.line.line_key) && isRecentOrphan(o, Date.now()));
     const known = new Set(orphans.map((o) => o.line.line_key));
     for (const prior of before.values()) {
       if (prior.pickedQty > 0 && !newKeys.has(prior.line.line_key) && !known.has(prior.line.line_key)) {
@@ -321,6 +343,7 @@ export async function refreshPickList(resync: boolean): Promise<void> {
           line: prior.line,
           pickedQty: prior.pickedQty,
           removedAt: new Date().toISOString(),
+          pickedFromBox: prior.pickedFromBox ?? lastPickedBox(prior.line.line_key),
         });
       }
     }

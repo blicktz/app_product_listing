@@ -31,10 +31,23 @@ export type PickLine = {
   status: ServerLineStatus;
 };
 
+/** Why a picked order left the list. See docs/order-picking-app/gone-orders.md. */
+export type GoneOrderStatus = 'shipped' | 'cancelled' | 'open' | 'unknown';
+
+export type GoneOrder = {
+  /** As in lines[].order_id, prefix included. */
+  order_id: string;
+  status: GoneOrderStatus;
+  /** When it shipped or was cancelled, if known. */
+  at: string | null;
+};
+
 export type PickList = {
   snapshot_id: string;
   generated_at: string;
   lines: PickLine[];
+  /** Missing from older servers. */
+  gone_orders?: GoneOrder[];
 };
 
 export type PickAction = 'pick' | 'undo' | 'missing' | 'reject';
