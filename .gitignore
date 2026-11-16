@@ -49,3 +49,6 @@ example
 # generated native folders
 /ios
 /android
+
+# temporary screenshots and reference files while working
+/docs/ref_images/
