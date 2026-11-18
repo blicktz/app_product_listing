@@ -1,11 +1,13 @@
 import { NativeTabs } from 'expo-router/unstable-native-tabs';
 import { usePackData } from '@/lib/pack/usePack';
 import { usePickData } from '@/lib/pick/usePick';
+import { usePullData } from '@/lib/pull/usePull';
 import { summarize, useUploadQueue } from '@/lib/uploadQueue/useUploadQueue';
 
 // Bottom nav: the system iOS tab bar (Liquid Glass on iOS 26+).
 // Shoot = photo capture (the original home screen); Stow = putting products
-// away into boxes; Pick = order picking; Pack = scan-checking each package.
+// away into boxes; Pick = order picking; Pack = scan-checking each package;
+// Pull = taking ended listings' stock out for disposal (last, never next to Pick).
 export default function TabsLayout() {
   const { states } = usePickData();
   let toPick = 0;
@@ -18,6 +20,15 @@ export default function TabsLayout() {
   // Packages still to pack; cancelled ones aren't work to do.
   const { board } = usePackData();
   const toPack = board.packages.filter((p) => !p.packedAt && !p.cancelled).length;
+
+  // Lines still to pull (a line with an unknown count has no unit total).
+  const { states: pullStates } = usePullData();
+  let toPull = 0;
+  for (const s of pullStates.values()) {
+    if (!s.complete) {
+      toPull += 1;
+    }
+  }
 
   const { jobs } = useUploadQueue();
   const { attention } = summarize(jobs);
@@ -52,6 +63,11 @@ export default function TabsLayout() {
         <NativeTabs.Trigger.Icon sf={{ default: 'archivebox', selected: 'archivebox.fill' }} md="inventory" />
         <NativeTabs.Trigger.Label>Pack</NativeTabs.Trigger.Label>
         <NativeTabs.Trigger.Badge hidden={toPack === 0}>{badge(toPack)}</NativeTabs.Trigger.Badge>
+      </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="pull">
+        <NativeTabs.Trigger.Icon sf={{ default: 'xmark.bin', selected: 'xmark.bin.fill' }} md="delete" />
+        <NativeTabs.Trigger.Label>Pull</NativeTabs.Trigger.Label>
+        <NativeTabs.Trigger.Badge hidden={toPull === 0}>{badge(toPull)}</NativeTabs.Trigger.Badge>
       </NativeTabs.Trigger>
     </NativeTabs>
   );

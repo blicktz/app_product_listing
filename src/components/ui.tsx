@@ -85,7 +85,7 @@ export function Row({ leading, title, subtitle, trailing, chevron = false, onPre
   );
 }
 
-type PillTone = 'neutral' | 'green' | 'orange' | 'blue' | 'red';
+type PillTone = 'neutral' | 'green' | 'orange' | 'blue' | 'red' | 'purple';
 
 const PILL_TONES: Record<PillTone, { bg: ColorValue; fg: ColorValue }> = {
   neutral: { bg: colors.fill, fg: colors.secondaryLabel },
@@ -93,6 +93,7 @@ const PILL_TONES: Record<PillTone, { bg: ColorValue; fg: ColorValue }> = {
   orange: { bg: tints.orange, fg: colors.orange },
   blue: { bg: tints.blue, fg: colors.blue },
   red: { bg: tints.red, fg: colors.red },
+  purple: { bg: tints.purple, fg: colors.purple },
 };
 
 export function Pill({ children, tone = 'neutral' }: { children: ReactNode; tone?: PillTone }) {
@@ -104,7 +105,7 @@ export function Pill({ children, tone = 'neutral' }: { children: ReactNode; tone
   );
 }
 
-type ButtonTone = 'blue' | 'red' | 'neutral';
+type ButtonTone = 'blue' | 'red' | 'neutral' | 'purple';
 
 /** iOS "tinted" / "filled" button. */
 export function Button({
@@ -130,16 +131,21 @@ export function Button({
   large?: boolean;
   style?: ViewStyle;
 }) {
-  const fg = tone === 'red' ? colors.red : tone === 'neutral' ? colors.label : colors.blue;
+  const fg =
+    tone === 'red' ? colors.red : tone === 'neutral' ? colors.label : tone === 'purple' ? colors.purple : colors.blue;
   const bg = filled
     ? tone === 'red'
       ? colors.red
-      : colors.blue
+      : tone === 'purple'
+        ? colors.purple
+        : colors.blue
     : tone === 'red'
       ? tints.red
       : tone === 'neutral'
         ? colors.fill
-        : tints.blue;
+        : tone === 'purple'
+          ? tints.purple
+          : tints.blue;
   const textColor = filled ? colors.white : fg;
   return (
     <Pressable

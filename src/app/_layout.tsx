@@ -6,6 +6,7 @@ import { startPickStore } from '@/lib/pick/store';
 import { startShootLog } from '@/lib/shootLog/store';
 import { startStowStore } from '@/lib/stow/store';
 import { startPackStore } from '@/lib/pack/store';
+import { startPullStore } from '@/lib/pull/store';
 import { navigationTheme } from '@/lib/theme';
 
 // Load the last pick list and send any pick events still queued on the phone.
@@ -20,6 +21,8 @@ startUploadQueue();
 startStowStore();
 // And for pack scans.
 startPackStore();
+// Pull: online only, so this just loads the last list and checks the Mac.
+startPullStore();
 
 export default function RootLayout() {
   // Follows the phone's appearance live, so every header and sheet matches it.
@@ -43,6 +46,10 @@ export default function RootLayout() {
           />
           <Stack.Screen
             name="pick-image"
+            options={{ presentation: 'fullScreenModal', animation: 'fade' }}
+          />
+          <Stack.Screen
+            name="pull-image"
             options={{ presentation: 'fullScreenModal', animation: 'fade' }}
           />
           <Stack.Screen

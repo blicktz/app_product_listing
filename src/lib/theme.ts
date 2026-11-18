@@ -16,6 +16,8 @@ export const colors = {
   green: PlatformColor('systemGreen'),
   orange: PlatformColor('systemOrange'),
   red: PlatformColor('systemRed'),
+  /** Pull (dispose) mode's accent, so it never looks like Pick. */
+  purple: PlatformColor('systemPurple'),
   white: '#ffffff',
 };
 
@@ -45,6 +47,7 @@ export const tints = {
   green: 'rgba(52,199,89,0.16)',
   orange: 'rgba(255,149,0,0.16)',
   red: 'rgba(255,59,48,0.12)',
+  purple: 'rgba(175,82,222,0.14)',
 };
 
 // iOS text styles (Dynamic Type default sizes).

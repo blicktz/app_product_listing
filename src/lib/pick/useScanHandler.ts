@@ -10,7 +10,8 @@ export type BannerAction = { label: string; primary?: boolean; onPress: () => vo
 
 export type Banner = {
   id: number;
-  tone: 'success' | 'warning' | 'error';
+  /** info: neutral progress (Pull's "sending…"). */
+  tone: 'success' | 'warning' | 'error' | 'info';
   title: string;
   detail?: string;
   /** With actions the banner stays until one is tapped. */

@@ -12,6 +12,7 @@ let boxOpenPlayer: Player | null = null;
 let packageDonePlayer: Player | null = null;
 let warningPlayer: Player | null = null;
 let errorPlayer: Player | null = null;
+let pullPlayer: Player | null = null;
 let audioReady = false;
 
 /** Call when a picking screen mounts, so the first sound has no delay. */
@@ -35,6 +36,9 @@ export function preparePickFeedback() {
   }
   if (!errorPlayer) {
     errorPlayer = createAudioPlayer(require('../../../assets/sounds/error.mp3'));
+  }
+  if (!pullPlayer) {
+    pullPlayer = createAudioPlayer(require('../../../assets/sounds/pull.wav'));
   }
 }
 
@@ -67,6 +71,13 @@ export function feedbackBoxOpen() {
 export function feedbackPackageDone() {
   preparePickFeedback();
   replay(packageDonePlayer);
+  void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+}
+
+/** A unit pulled for disposal: a falling two-note clunk, never Pick's ding. */
+export function feedbackPulled() {
+  preparePickFeedback();
+  replay(pullPlayer);
   void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 }
 

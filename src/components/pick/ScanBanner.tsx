@@ -9,6 +9,7 @@ const TONES: Record<Banner['tone'], { bg: string; fg: string; icon: SFSymbol }> 
   success: { bg: '#248A3D', fg: '#ffffff', icon: 'checkmark.circle.fill' },
   warning: { bg: '#FFB340', fg: '#1c1c1e', icon: 'exclamationmark.triangle.fill' },
   error: { bg: '#D70015', fg: '#ffffff', icon: 'xmark.octagon.fill' },
+  info: { bg: '#8944AB', fg: '#ffffff', icon: 'arrow.up.circle.fill' },
 };
 
 /** Standard iOS navigation bar, below the status bar. */

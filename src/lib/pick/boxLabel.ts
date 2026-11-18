@@ -73,7 +73,9 @@ export function sameBoxLabel(a: string, b: string): boolean {
  * printed labels and the inventory IDs themselves, so an old hand-written
  * label still opens its box. A label can stand for several IDs (sub-boxes).
  */
-export function boxScanIndex(lines: PickLine[]): Map<string, string[]> {
+export function boxScanIndex(
+  lines: Pick<PickLine, 'box_id' | 'room' | 'other_boxes' | 'nearby_boxes'>[]
+): Map<string, string[]> {
   const index = new Map<string, string[]>();
   const add = (key: string, boxId: string) => {
     const ids = index.get(key) ?? [];
