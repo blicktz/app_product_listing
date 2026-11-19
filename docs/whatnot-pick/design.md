@@ -1,6 +1,6 @@
 # Whatnot show pick: UI design
 
-Status: 2026-11-18, design draft for review. Nothing is built yet.
+Status: 2026-11-18, approved and built (see implementation-plan.md → Progress).
 
 Related:
 - Server side and the whole show-plan flow: `ebay_seller_port/whatnot_automation/docs/whatnot-show-plans.md` (Phase 4 is the server, Phase 5 this app).

@@ -1,6 +1,6 @@
 # Whatnot show pick: phone app implementation plan
 
-Status: 2026-11-18. **Built** (see Progress at the end); waiting for the acceptance run on the phone. The UI and data flow are in [design.md](design.md).
+Status: 2026-11-18. **Built, installed and in use** (see Progress at the end). The owner is running the rest of the acceptance list over the next days. The UI and data flow are in [design.md](design.md).
 
 **Depends on** the server endpoints from fp_ops Phase 4 (`ebay_seller_port/whatnot_automation/docs/whatnot-show-plans.md`):
 - `GET /whatnot-shows`
@@ -128,4 +128,14 @@ Build and test the server first. Then build the app against Test Show 111.
 **Checks**
 - `npx tsc --noEmit` is clean, and so is `npx expo lint`.
 - `npx expo export --platform ios` bundles.
-- **Not done yet:** installing it and the acceptance run on the phone. Two paired iPhones were listed, so run `make` and choose the pick phone.
+- **Installed** by the owner on the pick iPhone (`make`). The switch, the Whatnot mode, the lineup and the bundle pieces work.
+
+**Additions after the first install**
+- **Bundles (BUD-…)** are picked as their components (`BUD-…:COMPONENT`, matched by the component's printed SKU), under the bundle's `#NN`. The Lineup shows "n of m pieces", then "put it together" (design.md §4.2a).
+- **UI fixes.** The selected Orders segment is blue with white text (Whatnot stays yellow). The scanner card title and icon on the yellow tint use the label colour, because the fixed dark text was unreadable in dark mode.
+
+**Still to check on the phone (owner)**
+- acceptance steps 6–11: offline, a lineup changed on the Mac, Put back, wrong mode, sold, and Stow moving an item back out
+
+**Next app work**
+- Whatnot *sales* in Pick and Pack, and shipping labels. Not started: see `ebay_seller_port/whatnot_automation/docs/whatnot-show-plans.md` → Roadmap.
