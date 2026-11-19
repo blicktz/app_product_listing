@@ -22,6 +22,9 @@ import { dismissOrphan, refreshPickList } from '@/lib/pick/store';
 import { colors, shared, tabular, tints, type } from '@/lib/theme';
 import { usePickData } from '@/lib/pick/usePick';
 import { useScanHandler } from '@/lib/pick/useScanHandler';
+import { ModeSwitch } from '@/components/pick/ModeSwitch';
+import { WhatnotHome } from '@/components/whatnot-pick/WhatnotHome';
+import { useWhatnotData } from '@/lib/whatnot-pick/useWhatnot';
 
 function formatTime(iso: string | null): string {
   if (!iso) {
@@ -144,7 +147,7 @@ function HeaderButtons() {
   );
 }
 
-export default function PickHomeScreen() {
+function OrdersHome() {
   const router = useRouter();
   const { snap, states, boxes } = usePickData();
   const { banner, dismiss, handleScan } = useScanHandler({ boxId: null, openBoxMode: 'push' });
@@ -157,6 +160,7 @@ export default function PickHomeScreen() {
     [snap.orphans, snap.list?.gone_orders, board.packages]
   );
   const [flash, setFlash] = useState(false);
+  const whatnot = useWhatnotData();
 
   const { columns, done } = useMemo(() => groupColumns(boxes), [boxes]);
   const all = [...states.values()];
@@ -225,6 +229,11 @@ export default function PickHomeScreen() {
         }
       >
         <ScanCapture onScan={onScan} />
+        <ModeSwitch
+          mode="orders"
+          ordersCount={snap.list ? String(toPick) : undefined}
+          whatnotCount={whatnot.plan ? `${whatnot.picked}/${whatnot.total}` : undefined}
+        />
         {!snap.list ? (
           renderEmpty()
         ) : (
@@ -380,6 +389,12 @@ export default function PickHomeScreen() {
       <ScanBanner banner={banner} onDismiss={dismiss} />
     </View>
   );
+}
+
+/** Pick home: order Pick or the Whatnot show pick, by the Orders | Whatnot switch (docs/whatnot-pick/design.md). */
+export default function PickHomeScreen() {
+  const { snap } = usePickData();
+  return snap.pickMode === 'whatnot' ? <WhatnotHome /> : <OrdersHome />;
 }
 
 const styles = StyleSheet.create({

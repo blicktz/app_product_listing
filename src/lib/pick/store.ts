@@ -2,7 +2,7 @@ import { AppState } from 'react-native';
 import Constants from 'expo-constants';
 import { Directory, File, Paths } from 'expo-file-system';
 import { DEFAULT_SERVER_URL, checkHealth, fetchPickList, postPickEvents } from './api';
-import { deriveLineStates, isDone, type LineState, type LocalEvent } from './derive';
+import { deriveLineStates, isDone, labelSku, type LineState, type LocalEvent } from './derive';
 import { cleanupImages, prefetchImages } from './images';
 import { isRecentOrphan } from './orphans';
 import type { PickAction, PickEvent, PickLine, PickList } from './types';
@@ -51,6 +51,9 @@ type PersistedState = {
 
 export type UploadDestination = 'mac' | 'r2';
 
+/** Which list the Pick tab shows: orders to ship, or a Whatnot show's lineup. */
+export type PickMode = 'orders' | 'whatnot';
+
 // A choice made on the Mac Server screen always wins over this default.
 const DEFAULT_UPLOAD_DESTINATION: UploadDestination = 'mac';
 
@@ -59,6 +62,8 @@ export type PickSnapshot = PersistedState & {
   serverUrl: string;
   /** Where Shoot sends new photos. */
   uploadDestination: UploadDestination;
+  /** Pick tab mode, remembered across launches. */
+  pickMode: PickMode;
   /** null until the first request this run. */
   online: boolean | null;
   refreshing: 'full' | 'quick' | null;
@@ -83,6 +88,7 @@ let state: PersistedState = { list: null, fetchStartedAt: null, loadedAt: null, 
 let events: LocalEvent[] = [];
 let serverUrl = DEFAULT_SERVER_URL;
 let uploadDestinationChoice: UploadDestination | null = null;
+let pickModeChoice: PickMode | null = null;
 let online: boolean | null = null;
 let refreshing: PickSnapshot['refreshing'] = null;
 let refreshError: string | null = null;
@@ -99,6 +105,7 @@ function buildSnapshot(): PickSnapshot {
     events,
     serverUrl,
     uploadDestination: uploadDestinationChoice ?? DEFAULT_UPLOAD_DESTINATION,
+    pickMode: pickModeChoice ?? 'orders',
     online,
     refreshing,
     refreshError,
@@ -166,11 +173,14 @@ export function startPickStore() {
   state.orphans = state.orphans
     .filter((o) => isRecentOrphan(o, Date.now()))
     .map((o) => (o.pickedFromBox ? o : { ...o, pickedFromBox: lastPickedBox(o.line.line_key) }));
-  const settings = readJson<{ serverUrl?: string; uploadDestination?: UploadDestination }>(SETTINGS_FILE);
+  const settings = readJson<{ serverUrl?: string; uploadDestination?: UploadDestination; pickMode?: PickMode }>(
+    SETTINGS_FILE
+  );
   if (settings?.serverUrl) {
     serverUrl = settings.serverUrl;
   }
   uploadDestinationChoice = settings?.uploadDestination ?? null;
+  pickModeChoice = settings?.pickMode ?? null;
   notify();
 
   AppState.addEventListener('change', (appState) => {
@@ -203,6 +213,7 @@ function saveSettings() {
   writeJson(SETTINGS_FILE, {
     ...(serverUrl !== DEFAULT_SERVER_URL ? { serverUrl } : {}),
     ...(uploadDestinationChoice ? { uploadDestination: uploadDestinationChoice } : {}),
+    ...(pickModeChoice ? { pickMode: pickModeChoice } : {}),
   });
 }
 
@@ -212,6 +223,15 @@ export function setServerUrl(url: string) {
   online = null;
   notify();
   void tick();
+}
+
+export function setPickMode(mode: PickMode) {
+  if (pickModeChoice === mode) {
+    return;
+  }
+  pickModeChoice = mode;
+  saveSettings();
+  notify();
 }
 
 export function setUploadDestination(destination: UploadDestination) {
@@ -367,6 +387,16 @@ export async function refreshPickList(resync: boolean): Promise<void> {
     notify();
     scheduleSend();
   }
+}
+
+/** An open order line for a scanned SKU (for the Whatnot pick's "is on an order" banner). */
+export function findInOrders(code: string): LineState | null {
+  for (const s of currentLineStates().values()) {
+    if (!isDone(s) && labelSku(s.line.sku) === code) {
+      return s;
+    }
+  }
+  return null;
 }
 
 export function dismissOrphan(lineKey: string) {

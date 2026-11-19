@@ -1,5 +1,8 @@
 # Order Picking App — Requirements
 
+> **2026-11-18: Orders | Whatnot switch.** Pick home now has an `Orders | Whatnot` switch at the top. Orders mode is everything in this document, unchanged. Whatnot mode is the show pick: see `../whatnot-pick/design.md`.
+
+
 ## Goal
 Replace the printed picking sheet with the phone (plus a Bluetooth barcode scanner). The app tells me which boxes have items to pick and what to take from each box, and checks each pick against the item's barcode. It also sends a reliable record of what has been picked to the Mac, where packing happens.
 

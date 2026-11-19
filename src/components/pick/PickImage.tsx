@@ -12,12 +12,16 @@ type Props = {
   boxId?: string | null;
   /** Show the hint that a tap zooms. */
   zoomHint?: boolean;
+  /** Image already resolved by another cache (Whatnot pick); default: the Pick cache. */
+  uri?: string | null;
+  /** Replaces opening the Pick zoom viewer (Whatnot opens its item screen). */
+  onPress?: () => void;
 };
 
 /** Cover image; a tap opens the full-screen zoom viewer. */
-export function PickImage({ line, size, boxId = null, zoomHint = false }: Props) {
+export function PickImage({ line, size, boxId = null, zoomHint = false, uri: given, onPress }: Props) {
   const router = useRouter();
-  const uri = imageUri(line.image_url ?? line.image_url_full);
+  const uri = given !== undefined ? given : imageUri(line.image_url ?? line.image_url_full);
   const radius = size >= 100 ? 10 : 8;
 
   return (
@@ -26,13 +30,15 @@ export function PickImage({ line, size, boxId = null, zoomHint = false }: Props)
         styles.frame,
         { width: size, height: size, borderRadius: radius, opacity: pressed ? 0.8 : 1 },
       ]}
-      onPress={() =>
-        router.push({
-          pathname: '/pick-image',
-          params: { lineKey: line.line_key, boxId: boxId ?? '' },
-        })
+      onPress={
+        onPress ??
+        (() =>
+          router.push({
+            pathname: '/pick-image',
+            params: { lineKey: line.line_key, boxId: boxId ?? '' },
+          }))
       }
-      disabled={!uri}
+      disabled={!uri && !onPress}
     >
       {uri ? (
         <Image source={{ uri }} style={styles.image} resizeMode="cover" />

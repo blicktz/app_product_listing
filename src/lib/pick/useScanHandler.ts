@@ -4,7 +4,8 @@ import { boxScanIndex } from './boxLabel';
 import { groupBoxes, labelSku, type LineState } from './derive';
 import { feedbackBoxOpen, feedbackError, feedbackSuccess, feedbackWarning, preparePickFeedback } from './feedback';
 import { classifyScan, resolveItemScan } from './scan';
-import { currentLineStates, getSnapshot, recordEvent } from './store';
+import { currentLineStates, getSnapshot, recordEvent, setPickMode } from './store';
+import { findInShow } from '../whatnot-pick/store';
 
 export type BannerAction = { label: string; primary?: boolean; onPress: () => void };
 
@@ -160,11 +161,35 @@ export function useScanHandler({
         recordEvent({ action: 'reject', boxId, scannedValue: code, note: 'already picked' });
         show({ tone: 'warning', title: `${code} is already picked` });
         return;
-      case 'not-on-list':
-        feedbackError();
+      case 'not-on-list': {
         recordEvent({ action: 'reject', boxId, scannedValue: code });
+        // On the open Whatnot show instead? Say so; never record it there from here.
+        const show_ = findInShow(code);
+        if (show_) {
+          feedbackWarning();
+          show({
+            tone: 'warning',
+            title: `${code} is #${String(show_.line.lot).padStart(2, '0')} on “${show_.title}”`,
+            detail: 'A Whatnot show item, not an order. Nothing recorded.',
+            actions: [
+              { label: 'OK', onPress: dismiss },
+              {
+                label: 'Switch to Whatnot',
+                primary: true,
+                onPress: () => {
+                  dismiss();
+                  setPickMode('whatnot');
+                  router.navigate('/pick');
+                },
+              },
+            ],
+          });
+          return;
+        }
+        feedbackError();
         show({ tone: 'error', title: `${code} isn't in any order` });
         return;
+      }
     }
   };
 

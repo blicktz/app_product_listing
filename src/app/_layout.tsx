@@ -7,6 +7,7 @@ import { startShootLog } from '@/lib/shootLog/store';
 import { startStowStore } from '@/lib/stow/store';
 import { startPackStore } from '@/lib/pack/store';
 import { startPullStore } from '@/lib/pull/store';
+import { startWhatnotStore } from '@/lib/whatnot-pick/store';
 import { navigationTheme } from '@/lib/theme';
 
 // Load the last pick list and send any pick events still queued on the phone.
@@ -23,6 +24,8 @@ startStowStore();
 startPackStore();
 // Pull: online only, so this just loads the last list and checks the Mac.
 startPullStore();
+// Whatnot show pick: loads the last show and sends queued picks (after Pick: it uses its Mac address).
+startWhatnotStore();
 
 export default function RootLayout() {
   // Follows the phone's appearance live, so every header and sheet matches it.

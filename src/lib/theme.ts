@@ -18,6 +18,10 @@ export const colors = {
   red: PlatformColor('systemRed'),
   /** Pull (dispose) mode's accent, so it never looks like Pick. */
   purple: PlatformColor('systemPurple'),
+  /** Whatnot show pick's accent (Whatnot's own yellow), so it never looks like order Pick. */
+  yellow: PlatformColor('systemYellow'),
+  /** Text on a yellow fill: dark in both appearances, as yellow stays light. */
+  onYellow: '#1c1c1e',
   white: '#ffffff',
 };
 
@@ -48,6 +52,7 @@ export const tints = {
   orange: 'rgba(255,149,0,0.16)',
   red: 'rgba(255,59,48,0.12)',
   purple: 'rgba(175,82,222,0.14)',
+  yellow: 'rgba(255,204,0,0.22)',
 };
 
 // iOS text styles (Dynamic Type default sizes).
