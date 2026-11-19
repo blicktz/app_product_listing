@@ -11,6 +11,9 @@ export type ShowSummary = {
   /** The linked Whatnot show's start (UTC ISO), when known. */
   whatnot_scheduled_at: string | null;
   whatnot_status: string | null;
+  /** Plan items (lineup numbers). */
+  n_lots?: number;
+  /** Pieces to pick: a bundle counts once per component. */
   n_items: number;
   n_picked: number;
   n_sold: number;
@@ -41,6 +44,17 @@ export type WhatnotLine = {
   status: WhatnotLineStatus;
   in_prep: boolean;
   previous_box: string | null;
+  /**
+   * Bundle pieces: a BUD-… plan item is picked as its components, like order
+   * Pick. sku is then 'BUD-…:COMPONENT' (labelSku() gives the printed SKU),
+   * every piece shares the bundle's lot, and the bundle is put together in the
+   * prep box once all pieces are there. null for single items.
+   */
+  bundle_sku?: string | null;
+  bundle_title?: string | null;
+  bundle_size?: number | null;
+  /** 1-based position in the bundle. */
+  bundle_pos?: number | null;
 };
 
 export type RemovedInPrep = {
@@ -50,6 +64,7 @@ export type RemovedInPrep = {
   image_url: string | null;
   image_url_full: string | null;
   previous_box: string | null;
+  bundle_sku?: string | null;
 };
 
 export type WhatnotPlan = {

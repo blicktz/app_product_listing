@@ -288,6 +288,20 @@ All endpoints use the same bearer token and base URL as Pick, through `call<T>()
 
 `POST /whatnot-pick-events` takes `{device, events:[{event_id, plan_id, sku, line_key, action: pick|undo|missing|reject, method: scan|manual, box_id, scanned_value, note, at}]}` and returns `{accepted:[event_id…], plan_versions:{"7":"b41c…"}}`.
 
+### 4.2a Bundles (BUD-…)
+
+A bundle plan item is picked as its **components**, exactly as order Pick does:
+- **One line per component.** The Mac reads `bundle_listings` (`picklist._bundle_components`) and sends one line for each component.
+  - The line's `sku` is `BUD-…:COMPONENT`. `labelSku()` turns it into the printed SKU, so scanning the component's label matches.
+  - Every component shares the bundle's lot `#NN`, and each comes with its own box.
+  - Bundle fields on each line: `bundle_sku`, `bundle_title`, `bundle_size` and `bundle_pos`.
+- **A pick moves the component's own location row** into the prep box.
+- **When every piece is in the prep box**, the banner and the Lineup say "put it together".
+- **On screen:**
+  - Lineup shows the bundle's `#NN` once, as "Bundle BUD-… · 4 of 6 pieces picked", with a row for each piece.
+  - The box and item screens show "bundle BUD-… · piece 2 of 6".
+- **Counts:** `/whatnot-shows` gives `n_lots` (lineup numbers) and `n_items` (pieces to pick).
+
 ### 4.3 Keeping the list current: `plan_version`
 
 The console can change a lineup after the phone has loaded it: add, remove, reorder, renumber. To handle this:

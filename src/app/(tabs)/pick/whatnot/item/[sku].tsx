@@ -6,7 +6,8 @@ import { Button, EmptyState, Icon } from '@/components/ui';
 import { WhatnotStrip } from '@/components/whatnot-pick/WhatnotStrip';
 import { colors, shared, tabular, type } from '@/lib/theme';
 import { recordWhatnotEvent, whatnotImageUri } from '@/lib/whatnot-pick/store';
-import { lotLabel, useWhatnotData, useWhatnotScan } from '@/lib/whatnot-pick/useWhatnot';
+import { bundleNote, lotLabel, useWhatnotData, useWhatnotScan } from '@/lib/whatnot-pick/useWhatnot';
+import { labelSku } from '@/lib/pick/derive';
 
 // One show item, large: lineup number, photo, where it is, Mark picked /
 // Undo / Can't find. Opened from the Lineup view, Unlocated and photos.
@@ -14,7 +15,7 @@ export default function WhatnotItemScreen() {
   const router = useRouter();
   const { sku: raw } = useLocalSearchParams<{ sku: string }>();
   const sku = String(raw ?? '').toUpperCase();
-  const { plan, prepBox, states } = useWhatnotData();
+  const { plan, prepBox, states, bundles } = useWhatnotData();
   const line = plan?.lines.find((l) => l.sku.toUpperCase() === sku);
   const state = line ? states.get(line.line_key) : undefined;
   const { banner, dismiss, handleScan, confirmManual } = useWhatnotScan({
@@ -27,7 +28,7 @@ export default function WhatnotItemScreen() {
   if (!plan || !line || !state) {
     return (
       <View style={shared.screen}>
-        <EmptyState icon="questionmark.square.dashed" title={`${sku} isn't in this show`} />
+        <EmptyState icon="questionmark.square.dashed" title={`${labelSku(sku)} isn't in this show`} />
       </View>
     );
   }
@@ -66,7 +67,12 @@ export default function WhatnotItemScreen() {
           {uri ? <Image source={{ uri }} style={styles.image} resizeMode="contain" /> : <Icon name="photo" color={colors.tertiaryLabel} size={48} />}
         </View>
         <View style={styles.text}>
-          <Text style={styles.sku}>{line.sku}</Text>
+          <Text style={styles.sku}>{labelSku(line.sku)}</Text>
+          {line.bundle_sku ? (
+            <Text style={styles.bundle}>
+              {bundleNote(line)} · {bundles.get(line.bundle_sku)?.picked ?? 0} of {line.bundle_size} picked
+            </Text>
+          ) : null}
           <Text style={[styles.title, sold && styles.soldTitle]}>{line.title}</Text>
           <View style={styles.whereRow}>
             <Icon
@@ -110,6 +116,7 @@ const styles = StyleSheet.create({
   image: { width: '100%', height: '100%' },
   text: { marginHorizontal: 20, marginTop: 14, gap: 4 },
   sku: { ...type.headline, color: colors.label },
+  bundle: { ...type.subheadline, fontWeight: '600', color: colors.orange },
   title: { ...type.body, color: colors.label },
   soldTitle: { color: colors.tertiaryLabel, textDecorationLine: 'line-through' },
   whereRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6 },

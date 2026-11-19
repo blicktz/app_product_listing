@@ -28,7 +28,7 @@ import {
   whatnotImageUri,
 } from '@/lib/whatnot-pick/store';
 import type { WhatnotLine } from '@/lib/whatnot-pick/types';
-import { lotLabel, useWhatnotData, useWhatnotScan, type LineupRow } from '@/lib/whatnot-pick/useWhatnot';
+import { bundleNote, lotLabel, useWhatnotData, useWhatnotScan, type LineupRow } from '@/lib/whatnot-pick/useWhatnot';
 
 type View_ = 'box' | 'lineup';
 
@@ -122,7 +122,7 @@ function BoxRow({ box, lots, onPress }: { box: BoxGroup; lots: string; onPress: 
 export function WhatnotHome() {
   const router = useRouter();
   const data = useWhatnotData();
-  const { snap, plan, prepBox, boxes, unlocated, alreadyInPrep, lineup, lines, total, picked, missing, toPick } = data;
+  const { snap, plan, prepBox, boxes, unlocated, alreadyInPrep, lineup, lines, bundles, total, picked, missing, toPick } = data;
   const { snap: orders, states: orderStates } = usePickData();
   const [view, setView] = useState<View_>('box');
   const [flash, setFlash] = useState(false);
@@ -199,9 +199,14 @@ export function WhatnotHome() {
     const st = statusIcon(state, line);
     const sold = line.status === 'sold';
     const where = state?.status === 'picked' ? prepBox : line.box_id ?? 'no location';
+    const piece = Boolean(line.bundle_sku);
     return (
       <Pressable key={line.line_key} onPress={() => openItem(line.sku)} style={({ pressed }) => [styles.lineupRow, pressed && { opacity: 0.6 }]}>
-        <Text style={[styles.lot, tabular, sold && styles.soldText]}>{lotLabel(line.lot, width)}</Text>
+        {piece ? (
+          <Text style={[styles.pieceNo, tabular]}>{line.bundle_pos}/{line.bundle_size}</Text>
+        ) : (
+          <Text style={[styles.lot, tabular, sold && styles.soldText]}>{lotLabel(line.lot, width)}</Text>
+        )}
         {state ? (
           <PickImage line={state.line} size={44} uri={whatnotImageUri(line.image_url ?? line.image_url_full)} onPress={() => openItem(line.sku)} />
         ) : null}
@@ -210,7 +215,7 @@ export function WhatnotHome() {
             {line.title}
           </Text>
           <Text style={styles.lineupSub} numberOfLines={1}>
-            {sold ? 'SOLD · leave out' : `${line.sku} · ${where}`}
+            {sold ? 'SOLD · leave out' : `${labelSku(line.sku)} · ${where}`}
           </Text>
         </View>
         <Icon name={st.icon} color={st.color} size={22} />
@@ -354,7 +359,7 @@ export function WhatnotHome() {
                           key={s.line.line_key}
                           leading={<PickImage line={s.line} size={44} uri={whatnotImageUri(s.line.image_url)} onPress={() => openItem(s.line.sku)} />}
                           title={`${lotLabel(lotOf(s), width)}  ${labelSku(s.line.sku)}`}
-                          subtitle={s.line.title}
+                          subtitle={[bundleNote(lines.get(s.line.line_key)), s.line.title].filter(Boolean).join(' · ')}
                           chevron
                           onPress={() => openItem(s.line.sku)}
                         />
@@ -393,7 +398,44 @@ export function WhatnotHome() {
             ) : (
               <View>
                 <SectionHeader>Auction lineup · {lineup.length}</SectionHeader>
-                <Card inset={60}>{lineup.map(lineupRow)}</Card>
+                <Card inset={60}>
+                  {lineup.map((row, i) => {
+                    const b = row.line.bundle_sku;
+                    if (!b || lineup[i - 1]?.line.bundle_sku === b) {
+                      return lineupRow(row);
+                    }
+                    const prog = bundles.get(b);
+                    const complete = prog && prog.picked >= prog.total;
+                    // A bundle: its lot once, then one row per piece to pick.
+                    return (
+                      <View key={`bundle-${b}`}>
+                        <View style={styles.lineupRow}>
+                          <Text style={[styles.lot, tabular, row.line.status === 'sold' && styles.soldText]}>
+                            {lotLabel(row.line.lot, width)}
+                          </Text>
+                          <View style={styles.lineupText}>
+                            <Text style={styles.lineupTitle} numberOfLines={1}>
+                              Bundle {b}
+                            </Text>
+                            <Text style={styles.lineupSub} numberOfLines={1}>
+                              {row.line.status === 'sold'
+                                ? 'SOLD · leave out'
+                                : complete
+                                  ? `All ${prog.total} pieces in ${prepBox}: put it together`
+                                  : `${prog?.picked ?? 0} of ${prog?.total ?? '?'} pieces picked`}
+                            </Text>
+                          </View>
+                          <Icon
+                            name={complete ? 'shippingbox.fill' : 'shippingbox'}
+                            color={complete ? colors.green : colors.secondaryLabel}
+                            size={22}
+                          />
+                        </View>
+                        {lineupRow(row)}
+                      </View>
+                    );
+                  })}
+                </Card>
                 <SectionFooter>Lay the items out in this order. Tap one to see it large.</SectionFooter>
               </View>
             )}
@@ -405,7 +447,7 @@ export function WhatnotHome() {
                   {plan.removed_in_prep.map((r) => (
                     <Row
                       key={r.line_key}
-                      title={`${r.sku} → ${r.previous_box ?? 'its old box'}`}
+                      title={`${labelSku(r.sku)} → ${r.previous_box ?? 'its old box'}`}
                       subtitle={r.title ?? ''}
                       trailing={<Button label="Put back" tone="neutral" onPress={() => putBack(r.sku, r.previous_box)} />}
                     />
@@ -489,6 +531,7 @@ const styles = StyleSheet.create({
     minHeight: 60,
   },
   lot: { fontSize: 22, fontWeight: '700', color: colors.label, minWidth: 48 },
+  pieceNo: { ...type.footnote, color: colors.secondaryLabel, minWidth: 48, textAlign: 'right', paddingRight: 6 },
   lineupText: { flex: 1, gap: 2 },
   lineupTitle: { ...type.subheadline, color: colors.label },
   lineupSub: { ...type.footnote, color: colors.secondaryLabel },

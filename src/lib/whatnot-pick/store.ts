@@ -2,7 +2,7 @@ import { AppState } from 'react-native';
 import Constants from 'expo-constants';
 import { Directory, File, Paths } from 'expo-file-system';
 import { getSnapshot as getPickSnapshot } from '../pick/store';
-import { deriveLineStates, type LineState, type LocalEvent } from '../pick/derive';
+import { deriveLineStates, labelSku, type LineState, type LocalEvent } from '../pick/derive';
 import { createImageCache } from '../pick/images';
 import type { PickAction, PickLine } from '../pick/types';
 import { fetchPlan, fetchShows, postWhatnotEvents } from './api';
@@ -406,6 +406,6 @@ export function whatnotLineStates(snap: WhatnotSnapshot = snapshot): Map<string,
 /** The open show's line for a scanned SKU (for order Pick's "is #07 on …" banner). */
 export function findInShow(code: string): { line: WhatnotLine; title: string } | null {
   const p = snapshot.plan?.plan;
-  const line = p?.lines.find((l) => l.sku.toUpperCase() === code && l.status !== 'sold');
+  const line = p?.lines.find((l) => labelSku(l.sku) === code && l.status !== 'sold');
   return p && line ? { line, title: p.title } : null;
 }

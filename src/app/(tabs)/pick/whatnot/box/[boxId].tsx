@@ -9,7 +9,7 @@ import { WhatnotStrip } from '@/components/whatnot-pick/WhatnotStrip';
 import { labelSku, type LineState } from '@/lib/pick/derive';
 import { colors, shared, tabular, tints, type } from '@/lib/theme';
 import { recordWhatnotEvent, whatnotImageUri } from '@/lib/whatnot-pick/store';
-import { lotLabel, useWhatnotData, useWhatnotScan } from '@/lib/whatnot-pick/useWhatnot';
+import { bundleNote, lotLabel, useWhatnotData, useWhatnotScan } from '@/lib/whatnot-pick/useWhatnot';
 
 // One storage box of the open Whatnot show: its items with their lineup
 // numbers, Mark picked / Undo / Can't find. Mirrors pick/box/[boxId].tsx.
@@ -105,6 +105,9 @@ export default function WhatnotBoxScreen() {
                     <View style={styles.itemText}>
                       <Text style={[styles.lot, tabular, picked && { color: colors.green }]}>{lotLabel(lot(s), width)}</Text>
                       <Text style={styles.sku}>{labelSku(s.line.sku)}</Text>
+                      {lines.get(s.line.line_key)?.bundle_sku ? (
+                        <Text style={styles.bundle}>{bundleNote(lines.get(s.line.line_key))}</Text>
+                      ) : null}
                       <Text style={styles.title} numberOfLines={2}>
                         {s.line.title}
                       </Text>
@@ -158,6 +161,7 @@ const styles = StyleSheet.create({
   lot: { fontSize: 30, fontWeight: '800', color: colors.label },
   sku: { ...type.subheadline, fontWeight: '600', color: colors.label },
   title: { ...type.footnote, color: colors.secondaryLabel },
+  bundle: { ...type.footnote, fontWeight: '600', color: colors.orange },
   statusRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 },
   status: { ...type.subheadline, fontWeight: '600', flex: 1 },
   buttons: { flexDirection: 'row', gap: 8, marginTop: 6 },

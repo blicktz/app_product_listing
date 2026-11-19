@@ -43,6 +43,7 @@ export function useWhatnotData() {
       .map((line) => ({ line, state: states.get(line.line_key) }));
     const live = [...states.values()].filter((s) => !sold(s.line.line_key));
     const picked = live.filter((s) => s.status === 'picked').length;
+    const bundles = bundleProgress(plan?.lines ?? [], states);
     const missing = live.filter((s) => s.status === 'missing').length;
     return {
       snap,
@@ -54,6 +55,7 @@ export function useWhatnotData() {
       unlocated,
       alreadyInPrep,
       lineup,
+      bundles,
       total: live.length,
       picked,
       missing,
@@ -61,6 +63,28 @@ export function useWhatnotData() {
       soldCount: states.size - live.length,
     };
   }, [snap, plan, prepBox]);
+}
+
+export type BundleProgress = { sku: string; title: string | null; picked: number; total: number };
+
+/** Per bundle: how many of its pieces are in the prep box (this phone's picks included). */
+export function bundleProgress(lines: WhatnotLine[], states: Map<string, LineState>): Map<string, BundleProgress> {
+  const out = new Map<string, BundleProgress>();
+  for (const l of lines) {
+    if (!l.bundle_sku) {
+      continue;
+    }
+    const b = out.get(l.bundle_sku) ?? { sku: l.bundle_sku, title: l.bundle_title ?? null, picked: 0, total: 0 };
+    b.total += 1;
+    b.picked += states.get(l.line_key)?.status === 'picked' ? 1 : 0;
+    out.set(l.bundle_sku, b);
+  }
+  return out;
+}
+
+/** "bundle BUD-0907-003 · piece 2 of 6" for a bundle piece, else ''. */
+export function bundleNote(line: WhatnotLine | undefined): string {
+  return line?.bundle_sku ? `bundle ${line.bundle_sku} · piece ${line.bundle_pos} of ${line.bundle_size}` : '';
 }
 
 /** '#07' with the show's number width. */
@@ -122,12 +146,16 @@ export function useWhatnotScan({ boxId, preferLineKey = null, openBoxMode, onPic
     const { plan, prepBox, lines } = context();
     recordWhatnotEvent({ action: 'pick', line: state.line, boxId: fromBox, method, scannedValue: code });
     feedbackSuccess();
-    const lot = lines.get(state.line.line_key)?.lot;
-    show({
-      tone: 'success',
-      title: `${lotLabel(lot, plan?.number_width)} → ${prepBox}`,
-      detail: `${labelSku(state.line.sku)} · put it with #${lot ?? '?'} in the lineup`,
-    });
+    const line = lines.get(state.line.line_key);
+    const lot = line?.lot;
+    let detail = `${labelSku(state.line.sku)} · put it with #${lot ?? '?'} in the lineup`;
+    if (line?.bundle_sku) {
+      const b = bundleProgress([...lines.values()], whatnotLineStates()).get(line.bundle_sku);
+      detail = b && b.picked >= b.total
+        ? `${labelSku(state.line.sku)} · bundle ${line.bundle_sku} complete (${b.total}/${b.total}): put it together`
+        : `${labelSku(state.line.sku)} · bundle ${line.bundle_sku}: ${b?.picked ?? '?'} of ${b?.total ?? '?'} pieces`;
+    }
+    show({ tone: 'success', title: `${lotLabel(lot, plan?.number_width)} → ${prepBox}`, detail });
     onPicked?.(state);
   };
 
@@ -163,7 +191,7 @@ export function useWhatnotScan({ boxId, preferLineKey = null, openBoxMode, onPic
       return;
     }
 
-    const soldLine = [...lines.values()].find((l) => l.sku.toUpperCase() === code && l.status === 'sold');
+    const soldLine = [...lines.values()].find((l) => labelSku(l.sku) === code && l.status === 'sold');
     if (soldLine) {
       feedbackWarning();
       show({ tone: 'warning', title: `${lotLabel(soldLine.lot, plan.number_width)} ${code} already sold`, detail: 'Leave it out of the lineup.' });
