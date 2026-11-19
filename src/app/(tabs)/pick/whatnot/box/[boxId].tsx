@@ -141,7 +141,7 @@ export default function WhatnotBoxScreen() {
           </>
         )}
         <View style={[shared.card, styles.scanner, { backgroundColor: flash ? 'rgba(255,204,0,0.45)' : tints.yellow }]}>
-          <Icon name="barcode.viewfinder" color={colors.onYellow} size={26} />
+          <Icon name="barcode.viewfinder" color={colors.label} size={26} />
           <Text style={styles.scannerTitle}>Scan an item in this box</Text>
         </View>
       </ScrollView>
@@ -166,5 +166,5 @@ const styles = StyleSheet.create({
   status: { ...type.subheadline, fontWeight: '600', flex: 1 },
   buttons: { flexDirection: 'row', gap: 8, marginTop: 6 },
   scanner: { marginTop: 16, flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12, paddingHorizontal: 16 },
-  scannerTitle: { ...type.headline, color: colors.onYellow },
+  scannerTitle: { ...type.headline, color: colors.label },
 });

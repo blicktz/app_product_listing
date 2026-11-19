@@ -20,7 +20,7 @@ export const colors = {
   purple: PlatformColor('systemPurple'),
   /** Whatnot show pick's accent (Whatnot's own yellow), so it never looks like order Pick. */
   yellow: PlatformColor('systemYellow'),
-  /** Text on a yellow fill: dark in both appearances, as yellow stays light. */
+  /** Text on a SOLID yellow fill (switch, strip): dark in both appearances. Not for the yellow tint, which is dark in dark mode: use label there. */
   onYellow: '#1c1c1e',
   white: '#ffffff',
 };

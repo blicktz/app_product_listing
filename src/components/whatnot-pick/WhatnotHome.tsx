@@ -315,7 +315,7 @@ export function WhatnotHome() {
 
             {/* Scanner */}
             <View style={[shared.card, styles.scanner, { backgroundColor: flash ? 'rgba(255,204,0,0.45)' : tints.yellow }]}>
-              <Icon name="barcode.viewfinder" color={colors.onYellow} size={30} />
+              <Icon name="barcode.viewfinder" color={colors.label} size={30} />
               <View style={styles.scannerText}>
                 <Text style={styles.scannerTitle}>Scanner ready → {prepBox}</Text>
                 <Text style={styles.scannerSub}>Scan a box label, or an item</Text>
@@ -508,7 +508,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   scannerText: { flex: 1, gap: 1 },
-  scannerTitle: { ...type.headline, color: colors.onYellow },
+  scannerTitle: { ...type.headline, color: colors.label },
   scannerSub: { ...type.subheadline, color: colors.secondaryLabel },
   viewSwitch: {
     flexDirection: 'row',

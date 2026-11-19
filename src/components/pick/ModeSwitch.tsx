@@ -12,7 +12,8 @@ type Props = {
 
 /**
  * Orders | Whatnot at the top of Pick home (design.md §2). Always visible, one
- * tap; the Whatnot segment is yellow so the mode reads at a glance.
+ * tap; the selected segment takes its mode's colour (Orders blue, Whatnot
+ * yellow) so the mode reads at a glance.
  */
 export function ModeSwitch({ mode, ordersCount, whatnotCount }: Props) {
   const segment = (value: PickMode, label: string, count?: string) => {
@@ -57,11 +58,8 @@ const styles = StyleSheet.create({
     borderRadius: 7,
   },
   onOrders: {
-    backgroundColor: colors.card,
-    shadowColor: '#000',
-    shadowOpacity: 0.12,
-    shadowRadius: 3,
-    shadowOffset: { width: 0, height: 1 },
+    // order Pick's blue, as its scanner card; Whatnot is yellow
+    backgroundColor: colors.blue,
   },
   onWhatnot: {
     backgroundColor: colors.yellow,
@@ -72,7 +70,7 @@ const styles = StyleSheet.create({
     color: colors.secondaryLabel,
   },
   labelOn: {
-    color: colors.label,
+    color: colors.white,
   },
   labelOnWhatnot: {
     color: colors.onYellow,
