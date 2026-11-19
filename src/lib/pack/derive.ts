@@ -324,6 +324,7 @@ const STORE_SHORT: Record<string, string> = {
   foundandprofound: 'F&P',
   toptierpulls: 'TTP',
   shopify: 'Shopify',
+  whatnot: 'Whatnot',
 };
 
 export function shortStore(store: string): string {

@@ -59,7 +59,7 @@ export function boxColumn(boxId: string): string {
 
 /** Short order ID as printed on the picking sheet. */
 export function shortOrderId(orderId: string): string {
-  if (orderId.toLowerCase().startsWith('shopify_')) {
+  if (orderId.toLowerCase().startsWith('shopify_') || orderId.toLowerCase().startsWith('whatnot_')) {
     return orderId.slice(-5);
   }
   const dash = orderId.lastIndexOf('-');
@@ -67,7 +67,7 @@ export function shortOrderId(orderId: string): string {
 }
 
 export function shortStore(store: string): string {
-  return store.slice(0, 2).toUpperCase();
+  return store === 'whatnot' ? 'WN' : store.slice(0, 2).toUpperCase();
 }
 
 /** MM-DD from an ISO date. */
@@ -193,7 +193,12 @@ export function groupBoxes(states: Iterable<LineState>): Map<string, BoxGroup> {
     box.done = box.done && isDone(state);
   }
   for (const box of boxes.values()) {
-    box.lines.sort((a, b) => a.line.sku.localeCompare(b.line.sku));
+    // Whatnot lines (sort_key = lot number) first, in sale order; then by SKU.
+    box.lines.sort(
+      (a, b) =>
+        (a.line.sort_key ?? '\uffff').localeCompare(b.line.sort_key ?? '\uffff') ||
+        a.line.sku.localeCompare(b.line.sku)
+    );
   }
   return boxes;
 }

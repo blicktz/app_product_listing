@@ -27,6 +27,8 @@ export type PickLine = {
   box_id: string | null;
   other_boxes: string[];
   nearby_boxes: NearbyBox[];
+  /** Whatnot lines only: lot number order, so the prep box is walked in sale order. */
+  sort_key?: string;
   picked_qty: number;
   status: ServerLineStatus;
 };
