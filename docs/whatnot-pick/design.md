@@ -187,6 +187,8 @@ Nothing changes below the switch. Its refresh sheet keeps **Full sync (eBay + Sh
 └─────────────────────────────────────┘
 ```
 
+Lines in the box (and the lot list on its "By box" row) are sorted by SKU (the label printed on each item), not by lot, so you walk the box in shelf order; the lot `#NN` on each row tells you where it goes in the lineup.
+
 The same "Can't find" route as order Pick is reached from a line's ⋯ menu.
 
 ### 3.6 Item screen (from Lineup or Unlocated)

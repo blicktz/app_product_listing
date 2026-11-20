@@ -30,7 +30,10 @@ export default function WhatnotBoxScreen() {
   };
 
   const lot = (s: LineState) => lines.get(s.line.line_key)?.lot;
-  const sorted = [...(box?.lines ?? [])].sort((a, b) => (lot(a) ?? 0) - (lot(b) ?? 0));
+  // Walk the storage box by the SKU printed on each item (lot only breaks ties).
+  const sorted = [...(box?.lines ?? [])].sort(
+    (a, b) => labelSku(a.line.sku).localeCompare(labelSku(b.line.sku)) || (lot(a) ?? 0) - (lot(b) ?? 0)
+  );
 
   const askManual = (s: LineState) =>
     Alert.alert('Mark as picked without scanning?', `${lotLabel(lot(s), width)} ${labelSku(s.line.sku)}\n${s.line.title}`, [

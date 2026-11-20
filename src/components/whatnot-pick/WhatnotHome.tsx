@@ -136,11 +136,15 @@ export function WhatnotHome() {
   const { columns, done } = useMemo(() => groupColumns(boxes), [boxes]);
   const width = plan?.number_width ?? 2;
   const lotOf = (s: LineState) => lines.get(s.line.line_key)?.lot;
+  // Lots in SKU order (same as the box screen): neighbouring SKUs sit together in the box.
   const lotsIn = (box: BoxGroup) =>
-    box.lines
+    [...box.lines]
+      .sort(
+        (a, b) =>
+          labelSku(a.line.sku).localeCompare(labelSku(b.line.sku)) || (lotOf(a) ?? 0) - (lotOf(b) ?? 0)
+      )
       .map(lotOf)
       .filter((n): n is number => Boolean(n))
-      .sort((a, b) => a - b)
       .map((n) => lotLabel(n, width))
       .join(' ');
   const shows = snap.shows?.shows ?? [];
