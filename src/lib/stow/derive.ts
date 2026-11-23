@@ -20,7 +20,60 @@ export type StowRow = {
   scanSeq: number;
   /** The move that took this row's units to another box, or the undo of the move that brought them here. */
   hiddenBy: string | null;
+  /** Set when the row came from a range-label scan; its rows are shown as one group. */
+  range: RangeRef | null;
 };
+
+export type RangeRef = {
+  /** The scanned code (AAQ1122001~015). */
+  code: string;
+  /** One range scan: the code and the seq of its first event. */
+  group: string;
+  /** Events in that scan (stowed or moved SKUs; skipped ones have none). */
+  count: number;
+};
+
+const RANGE_NOTE = /^range (\d+)\/(\d+)$/;
+
+/** A range scan's events carry note "range i/n" and the raw code in scanned_value. */
+export function rangeRef(e: { note: string | null; scanned_value: string | null; seq: number }): RangeRef | null {
+  const m = e.note ? RANGE_NOTE.exec(e.note) : null;
+  if (!m || !e.scanned_value) {
+    return null;
+  }
+  return { code: e.scanned_value, group: `${e.scanned_value}#${e.seq - Number(m[1]) + 1}`, count: Number(m[2]) };
+}
+
+export type StowListItem =
+  | { kind: 'single'; key: string; row: StowRow }
+  | { kind: 'range'; key: string; code: string; rows: StowRow[]; moved: number; units: number; scanSeq: number };
+
+/** A box's rows for the screen: each range scan's rows folded into one item, newest first. */
+export function groupRows(rows: StowRow[]): StowListItem[] {
+  const items: StowListItem[] = [];
+  const groups = new Map<string, Extract<StowListItem, { kind: 'range' }>>();
+  for (const row of rows) {
+    if (!row.range) {
+      items.push({ kind: 'single', key: row.key, row });
+      continue;
+    }
+    let group = groups.get(row.range.group);
+    if (!group) {
+      group = { kind: 'range', key: row.range.group, code: row.range.code, rows: [], moved: 0, units: 0, scanSeq: 0 };
+      groups.set(row.range.group, group);
+      items.push(group);
+    }
+    group.rows.push(row);
+    group.moved += row.kind === 'move' ? 1 : 0;
+    group.units += row.units ?? 0;
+    group.scanSeq = Math.max(group.scanSeq, row.scanSeq);
+  }
+  for (const group of groups.values()) {
+    group.rows.sort((a, b) => a.sku.localeCompare(b.sku));
+  }
+  const seqOf = (item: StowListItem) => (item.kind === 'single' ? item.row.scanSeq : item.scanSeq);
+  return items.sort((a, b) => seqOf(b) - seqOf(a));
+}
 
 export type StowBoxSummary = {
   label: string;
@@ -98,6 +151,7 @@ function buildSession(id: string, items: LocalStowEvent[]): StowSession {
             lastEventId: e.event_id,
             scanSeq: e.seq,
             hiddenBy: null,
+            range: rangeRef(e),
           });
           break;
         }
@@ -120,6 +174,7 @@ function buildSession(id: string, items: LocalStowEvent[]): StowSession {
             lastEventId: e.event_id,
             scanSeq: e.seq,
             hiddenBy: null,
+            range: rangeRef(e),
           });
         }
         break;

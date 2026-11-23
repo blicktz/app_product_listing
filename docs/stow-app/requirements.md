@@ -136,6 +136,7 @@ Each Enter-terminated scan is cleaned up with Pick's `normalizeScan` (`src/lib/p
 
 | Scan | Result | Event |
 |---|---|---|
+| A range label (`AAQ1122001~015`, or typed `AAQ-1122-001~015`), checked first | Every SKU of the card batch goes into the open box. See [Range labels](#range-labels) | one `stow` per SKU |
 | Has the `ST-…` label shape | Opens that box. Any previously open box is closed without a separate step. An unknown label is a **new box** | `box_open` |
 | An old short ID listed by `GET /stow-state` | Opens that box, using its printed label | `box_open` |
 | SKU shape (Pick's `SKU_PATTERN`), no box open, recorded in a box | Lookup: "SKU is in BOX", with its units and previous box ([move-back.md](move-back.md)) | none |
@@ -154,6 +155,24 @@ Each Enter-terminated scan is cleaned up with Pick's `normalizeScan` (`src/lib/p
 - A scan of a box that's already open does nothing and records nothing.
 - "Recorded in a different box" is checked against this phone's own events plus the last `GET /stow-state`. The server also checks every stow when it arrives. See [Location table changes](#location-table-changes-stow-and-pick).
 - **Undo** (`↶`) records one `undo` event for the row, with the row's units. Undoing a move puts the SKU back on record in its previous box with the count it had there (a number or unknown). Units scanned into the new box after the move go back with it, so their rows disappear too.
+
+## Range labels
+One label per card batch from the ops console Cards tab, so a bundle of 15–50 sleeved cards is stowed with one
+scan. Full spec: `ebay_seller_port/fp_ops/docs/stow-range-label-requirements.md`. Code: `src/lib/rangeLabel.ts`
+(parse, expand, sort) and `stowRange` in `src/lib/stow/useStowScan.ts`.
+
+- **No box open:** a lookup only ("12 not stowed yet · 3 in ST-GAR-AAA-004"), nothing recorded.
+- **Box open:** SKUs with no location are stowed (1 unit each). SKUs already in the open box are **skipped**: a range
+  never adds a unit, so scanning it twice changes nothing ("All 15 already in …"). SKUs in other boxes need a
+  confirmation banner first: *Move all N here* / *Stow the others only* / *Cancel*.
+- One `stow` event per stowed or moved SKU, all written to disk in one go (`recordStowEvents`): `scanned_value` =
+  the barcode form of the range, `note` = `range i/n`. The server needs no special handling.
+- The box screen shows the scan as one row ("AAQ-1122-001~015 · 15 SKUs"), tap to expand. `↶` on it undoes the
+  whole scan (one `undo` per SKU, moves go back with their old counts); `↶` and the quantity control on an expanded
+  SKU work as on any row.
+- Bad ranges (last < first, more than 200 SKUs) are rejected with a `reject` event, `note: 'bad range'`.
+- **Every other scanner (Pick, Pull, Pack, Whatnot pick) rejects a range label**: "Range labels are for Stow only".
+- Tests: `make test` (`src/lib/rangeLabel.test.mts`, `src/lib/stow/derive.test.mts`).
 
 ## Scanner input handling
 As Pick: a hidden text field stays focused while the Stow tab is in front, scans are trimmed and upper-cased, and scans must still work with a Chinese (pinyin) keyboard active. Reuse `src/components/pick/ScanCapture.tsx`. Only the tab in front handles scans.

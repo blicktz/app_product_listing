@@ -161,34 +161,51 @@ export type StowRecordInput = {
 };
 
 export function recordStowEvent(input: StowRecordInput): StowEvent {
-  // The first box scanned starts a session.
-  const sessionId = openSessionId(events) ?? (input.action === 'box_open' ? uuid() : null);
-  const event: StowEvent = {
-    event_id: uuid(),
-    session_id: sessionId,
-    seq: meta.nextSeq,
-    action: input.action,
-    box_label: input.boxLabel ?? null,
-    sku: input.sku ?? null,
-    units: input.units ?? null,
-    moved_from_box: input.movedFromBox ?? null,
-    undoes_event_id: input.undoesEventId ?? null,
-    method: input.method ?? 'scan',
-    scanned_value: input.scannedValue ?? null,
-    note: input.note ?? null,
-    at: new Date().toISOString(),
-  };
-  const local: LocalStowEvent = { event, acceptedAt: null };
-  if (input.movedUnits !== undefined) {
-    local.movedUnits = input.movedUnits;
+  return recordStowEvents([input])[0];
+}
+
+/**
+ * Records several events with consecutive seqs in one write to disk, so a crash
+ * or force-quit keeps all of them or none (one range-label scan = one call).
+ */
+export function recordStowEvents(inputs: StowRecordInput[]): StowEvent[] {
+  if (inputs.length === 0) {
+    return [];
   }
-  events = [...events, local];
-  meta = { ...meta, nextSeq: meta.nextSeq + 1 };
+  const added: LocalStowEvent[] = [];
+  let seq = meta.nextSeq;
+  for (const input of inputs) {
+    // The first box scanned starts a session.
+    const sessionId =
+      openSessionId([...events, ...added]) ?? (input.action === 'box_open' ? uuid() : null);
+    const event: StowEvent = {
+      event_id: uuid(),
+      session_id: sessionId,
+      seq: seq++,
+      action: input.action,
+      box_label: input.boxLabel ?? null,
+      sku: input.sku ?? null,
+      units: input.units ?? null,
+      moved_from_box: input.movedFromBox ?? null,
+      undoes_event_id: input.undoesEventId ?? null,
+      method: input.method ?? 'scan',
+      scanned_value: input.scannedValue ?? null,
+      note: input.note ?? null,
+      at: new Date().toISOString(),
+    };
+    const local: LocalStowEvent = { event, acceptedAt: null };
+    if (input.movedUnits !== undefined) {
+      local.movedUnits = input.movedUnits;
+    }
+    added.push(local);
+  }
+  events = [...events, ...added];
+  meta = { ...meta, nextSeq: seq };
   writeJson(EVENTS_FILE, events);
   writeJson(META_FILE, meta);
   notify();
   scheduleSend();
-  return event;
+  return added.map((l) => l.event);
 }
 
 function scheduleSend() {

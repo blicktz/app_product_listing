@@ -15,6 +15,7 @@ import {
   type EventInput,
   type SendResult,
 } from './store';
+import { looksLikeRange, RANGE_STOW_ONLY, RANGE_STOW_ONLY_DETAIL } from '../rangeLabel';
 
 // Scan + button handling for the Pull screens. Every pull, finish, missing or
 // undo goes to the Mac and counts only on its answer (online only, §5.3).
@@ -199,6 +200,12 @@ export function usePullScanHandler({
   };
 
   const handleScan = (code: string) => {
+    if (looksLikeRange(code)) {
+      // A range label stows a whole card batch: Stow only. Everything else is card by card.
+      feedbackError();
+      show({ tone: 'error', title: RANGE_STOW_ONLY, detail: RANGE_STOW_ONLY_DETAIL });
+      return;
+    }
     const states = currentLines();
     const list = getSnapshot().list;
 

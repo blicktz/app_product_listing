@@ -14,6 +14,7 @@ import {
   type WhatnotSnapshot,
 } from './store';
 import type { WhatnotLine } from './types';
+import { looksLikeRange, RANGE_STOW_ONLY, RANGE_STOW_ONLY_DETAIL } from '../rangeLabel';
 
 export const DEFAULT_PREP_BOX = 'ST-PRE-WHT-001';
 
@@ -160,6 +161,12 @@ export function useWhatnotScan({ boxId, preferLineKey = null, openBoxMode, onPic
   };
 
   const handleScan = (code: string) => {
+    if (looksLikeRange(code)) {
+      // A range label stows a whole card batch: Stow only. Everything else is card by card.
+      feedbackError();
+      show({ tone: 'error', title: RANGE_STOW_ONLY, detail: RANGE_STOW_ONLY_DETAIL });
+      return;
+    }
     const { plan, prepBox, lines, states } = context();
     if (!plan) {
       feedbackWarning();

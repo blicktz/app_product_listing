@@ -6,6 +6,7 @@ import { feedbackBoxOpen, feedbackError, feedbackSuccess, feedbackWarning, prepa
 import { classifyScan, resolveItemScan } from './scan';
 import { currentLineStates, getSnapshot, recordEvent, setPickMode } from './store';
 import { findInShow } from '../whatnot-pick/store';
+import { looksLikeRange, RANGE_STOW_ONLY, RANGE_STOW_ONLY_DETAIL } from '../rangeLabel';
 
 export type BannerAction = { label: string; primary?: boolean; onPress: () => void };
 
@@ -93,6 +94,12 @@ export function useScanHandler({
   };
 
   const handleScan = (code: string) => {
+    if (looksLikeRange(code)) {
+      // A range label stows a whole card batch: Stow only. Everything else is card by card.
+      feedbackError();
+      show({ tone: 'error', title: RANGE_STOW_ONLY, detail: RANGE_STOW_ONLY_DETAIL });
+      return;
+    }
     const snap = getSnapshot();
     const states = currentLineStates();
 

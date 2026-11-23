@@ -20,6 +20,7 @@ import {
 } from './scan';
 import { consumeNotice, ensureFresh, getSnapshot, packScreenFocused, recordPackEvent } from './store';
 import { usePackData } from './usePack';
+import { looksLikeRange, RANGE_STOW_ONLY, RANGE_STOW_ONLY_DETAIL } from '../rangeLabel';
 
 const AUTO_HIDE_MS = 3500;
 // The "pack & stick the label" banner and notices from the other side stay longer.
@@ -104,6 +105,12 @@ export function usePackScan({ openPackage, autoRefresh = true }: Options) {
   };
 
   const handleScan = (code: string) => {
+    if (looksLikeRange(code)) {
+      // A range label stows a whole card batch: Stow only. Everything else is card by card.
+      feedbackError();
+      show({ tone: 'error', title: RANGE_STOW_ONLY, detail: RANGE_STOW_ONLY_DETAIL });
+      return;
+    }
     const snap = getSnapshot();
     if (!snap.server) {
       feedbackError();

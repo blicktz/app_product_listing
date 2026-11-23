@@ -5,7 +5,8 @@ import { ScanBanner } from '@/components/pick/ScanBanner';
 import { ScanCapture } from '@/components/pick/ScanCapture';
 import { QuantityPad } from '@/components/stow/QuantityPad';
 import { Button, Card, EmptyState, Icon, Pill, Row, SectionHeader } from '@/components/ui';
-import type { StowRow } from '@/lib/stow/derive';
+import { parseRangeCode } from '@/lib/rangeLabel';
+import { groupRows, type StowListItem, type StowRow } from '@/lib/stow/derive';
 import { useStowData } from '@/lib/stow/useStow';
 import { useStowScan } from '@/lib/stow/useStowScan';
 import { colors, shared, tabular, tints, type } from '@/lib/theme';
@@ -31,6 +32,12 @@ function UndoButton({ onPress }: { onPress: () => void }) {
   );
 }
 
+/** AAQ1122001~015 → AAQ-1122-001~015, as printed on the label. */
+function printedRange(code: string): string {
+  const range = parseRangeCode(code);
+  return range?.ok ? range.printed : code;
+}
+
 function rowSubtitle(row: StowRow): string {
   return [
     formatTime(row.at),
@@ -44,7 +51,8 @@ function rowSubtitle(row: StowRow): string {
 export default function StowBoxScreen() {
   const router = useRouter();
   const { current, openBoxExisting } = useStowData();
-  const { banner, dismiss, handleScan, enterSku, setQuantity, undoRow, finish } = useStowScan();
+  const { banner, dismiss, handleScan, enterSku, setQuantity, undoRow, undoRows, finish } = useStowScan();
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [flash, setFlash] = useState(false);
   const [padRow, setPadRow] = useState<StowRow | null>(null);
   const [promptOpen, setPromptOpen] = useState(false);
@@ -52,6 +60,7 @@ export default function StowBoxScreen() {
   const label = current?.openBox ?? null;
   const box = current?.boxes.find((b) => b.label === label);
   const rows = box?.rows ?? [];
+  const items = groupRows(rows);
   const [, room, column] = label?.split('-') ?? [];
 
   const onScan = (code: string) => {
@@ -73,11 +82,89 @@ export default function StowBoxScreen() {
       ]
     );
 
+  const askUndoRange = (group: Extract<StowListItem, { kind: 'range' }>) =>
+    Alert.alert(
+      `Undo all ${group.rows.length}?`,
+      `${printedRange(group.code)}: every SKU of this scan is taken back${
+        group.moved > 0 ? `; the ${group.moved} moved go back to their old boxes with their old counts` : ''
+      }.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Undo all', style: 'destructive', onPress: () => undoRows(group.rows) },
+      ]
+    );
+
+  const toggle = (key: string) =>
+    setExpanded((open) => {
+      const next = new Set(open);
+      if (!next.delete(key)) {
+        next.add(key);
+      }
+      return next;
+    });
+
+  const renderRow = (row: StowRow, nested = false) => (
+    <Row
+      key={row.key}
+      leading={nested ? <View style={styles.nested} /> : undefined}
+      title={row.sku}
+      subtitle={rowSubtitle(row)}
+      trailing={
+        <View style={styles.trailing}>
+          {row.kind === 'move' ? (
+            <Pill tone="orange">{row.units === null ? 'moved' : `moved ×${row.units}`}</Pill>
+          ) : (
+            <Pressable
+              hitSlop={4}
+              onPress={() => setPadRow(row)}
+              style={({ pressed }) => [styles.quantity, { opacity: pressed ? 0.5 : 1 }]}
+            >
+              <Text style={[styles.quantityText, tabular]}>×{row.units ?? 0}</Text>
+            </Pressable>
+          )}
+          <UndoButton onPress={() => askUndo(row)} />
+        </View>
+      }
+    />
+  );
+
+  const renderItem = (item: StowListItem) => {
+    if (item.kind === 'single') {
+      return renderRow(item.row);
+    }
+    const open = expanded.has(item.key);
+    const newest = item.rows.reduce((a, b) => (b.scanSeq > a.scanSeq ? b : a));
+    return (
+      <View key={item.key}>
+        <Row
+          title={printedRange(item.code)}
+          subtitle={[
+            plural(item.rows.length, 'SKU'),
+            item.moved > 0 ? `${item.moved} moved` : null,
+            formatTime(newest.at),
+            newest.method === 'manual' ? 'typed by hand' : null,
+          ]
+            .filter(Boolean)
+            .join(' · ')}
+          onPress={() => toggle(item.key)}
+          trailing={
+            <View style={styles.trailing}>
+              <Pill tone={item.moved > 0 ? 'orange' : 'blue'}>×{item.units}</Pill>
+              <Icon name={open ? 'chevron.up' : 'chevron.down'} size={14} color={colors.tertiaryLabel} weight="semibold" />
+              <UndoButton onPress={() => askUndoRange(item)} />
+            </View>
+          }
+        />
+        {open ? item.rows.map((row) => renderRow(row, true)) : null}
+      </View>
+    );
+  };
+
   const askSku = () => {
     setPromptOpen(true);
     Alert.prompt(
       'Enter SKU',
-      'For a label that will not scan. Double-press the scanner trigger to show the keyboard.',
+      'For a label that will not scan, or a range like AAQ-1122-001~015. Double-press the scanner trigger to show the keyboard.',
       [
         { text: 'Cancel', style: 'cancel', onPress: () => setPromptOpen(false) },
         {
@@ -153,29 +240,7 @@ export default function StowBoxScreen() {
           <>
             <SectionHeader>In this box · {plural(rows.length, 'SKU')}</SectionHeader>
             <Card>
-              {rows.map((row) => (
-                <Row
-                  key={row.key}
-                  title={row.sku}
-                  subtitle={rowSubtitle(row)}
-                  trailing={
-                    <View style={styles.trailing}>
-                      {row.kind === 'move' ? (
-                        <Pill tone="orange">{row.units === null ? 'moved' : `moved ×${row.units}`}</Pill>
-                      ) : (
-                        <Pressable
-                          hitSlop={4}
-                          onPress={() => setPadRow(row)}
-                          style={({ pressed }) => [styles.quantity, { opacity: pressed ? 0.5 : 1 }]}
-                        >
-                          <Text style={[styles.quantityText, tabular]}>×{row.units ?? 0}</Text>
-                        </Pressable>
-                      )}
-                      <UndoButton onPress={() => askUndo(row)} />
-                    </View>
-                  }
-                />
-              ))}
+              {items.map(renderItem)}
             </Card>
           </>
         ) : (
@@ -261,6 +326,9 @@ const styles = StyleSheet.create({
   quantityText: {
     ...type.headline,
     color: colors.blue,
+  },
+  nested: {
+    width: 14,
   },
   undo: {
     width: 34,

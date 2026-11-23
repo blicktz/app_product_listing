@@ -7,6 +7,7 @@
 #   make expiry       show when the last build's provisioning profile expires
 #   make prebuild     regenerate ios/ from app.json and install pods
 #   make clean        delete the Xcode build folder
+#   make test         run the pure-logic tests (node --test, no simulator)
 #
 # The same build works on any iPhone. Building with a phone as the destination
 # registers that phone in the signing profile, which is why we ask which one.
@@ -19,7 +20,7 @@ APP       := $(IOS_DIR)/build/Build/Products/$(CONFIG)-iphoneos/productlistings.
 PICK      := ./scripts/pick-iphone.sh
 
 .DEFAULT_GOAL := install
-.PHONY: install build launch devices expiry prebuild pods clean check
+.PHONY: install build launch devices expiry prebuild pods clean check test
 
 install: check
 	@set -e; \
@@ -70,3 +71,6 @@ check:
 	@test -d node_modules || { echo "node_modules missing: run 'npm install' first."; exit 1; }
 	@test -d $(IOS_DIR)/productlistings.xcworkspace || { echo "ios/ missing: run 'make prebuild' first."; exit 1; }
 	@test -d $(IOS_DIR)/Pods || { echo "Pods missing: run 'make pods' first."; exit 1; }
+
+test:
+	node --test $$(find src -name '*.test.mts')
