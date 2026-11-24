@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { ListingPill } from '@/components/ListingPill';
 import { Card, Icon, SectionFooter, SectionHeader } from '@/components/ui';
 import { colors, shared } from '@/lib/theme';
@@ -7,8 +7,14 @@ import {
   CONDITION_COLORS,
   CONDITION_LABELS,
   EBAY_STORES,
+  FB_MAX_PHOTOS,
+  FB_MKT_COLOR,
   ITEM_CONDITIONS,
+  NONE_COLOR,
   STORE_COLORS,
+  channelSummary,
+  completeListingConfig,
+  listsNowhere,
   loadListingConfigDraft,
   saveListingConfigDraft,
   type ListingConfigDraft,
@@ -47,6 +53,9 @@ export default function ListingConfigScreen() {
     saveListingConfigDraft(next);
   };
 
+  const config = completeListingConfig(draft);
+  const fbOnly = draft.ebayStore === null;
+
   return (
     <ScrollView
       style={shared.screen}
@@ -66,7 +75,7 @@ export default function ListingConfigScreen() {
         ))}
       </Card>
 
-      <SectionHeader>Store</SectionHeader>
+      <SectionHeader>eBay store</SectionHeader>
       <Card>
         {EBAY_STORES.map((store) => (
           <OptionRow
@@ -77,10 +86,43 @@ export default function ListingConfigScreen() {
             onPress={() => update({ ebayStore: store })}
           />
         ))}
+        <OptionRow
+          key="none"
+          label="None (FB only)"
+          color={NONE_COLOR}
+          selected={fbOnly}
+          onPress={() => update({ ebayStore: null })}
+        />
       </Card>
+      <SectionFooter>One eBay store at most.</SectionFooter>
+
+      <SectionHeader>Facebook Marketplace</SectionHeader>
+      <Card>
+        <View style={styles.row}>
+          <View style={styles.switchLabel}>
+            <ListingPill label="FB" color={FB_MKT_COLOR} />
+            <View style={styles.switchText}>
+              <Text style={styles.switchTitle}>
+                {fbOnly ? 'List on FB Marketplace' : 'Also list on FB Marketplace'}
+              </Text>
+              <Text style={styles.switchSubtitle}>Local pickup · first {FB_MAX_PHOTOS} photos</Text>
+            </View>
+          </View>
+          <Switch value={!!draft.fbMkt} onValueChange={(fbMkt) => update({ fbMkt })} />
+        </View>
+      </Card>
+
+      {listsNowhere(draft) ? (
+        <View style={styles.warning}>
+          <Icon name="exclamationmark.triangle.fill" color={colors.orange} size={16} />
+          <Text style={styles.warningText}>Pick an eBay store or turn on FB Marketplace.</Text>
+        </View>
+      ) : config ? (
+        <Text style={styles.summary}>{channelSummary(config)}</Text>
+      ) : null}
       <SectionFooter>
         Applies to every SKU you upload until you change it. Uploaded with each SKU as
-        listing.env for the listing generator.
+        listing.env for the listing generators.
       </SectionFooter>
     </ScrollView>
   );
@@ -97,5 +139,43 @@ const styles = StyleSheet.create({
     minHeight: 60,
     paddingVertical: 10,
     paddingHorizontal: 16,
+  },
+  switchLabel: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  switchText: {
+    flex: 1,
+  },
+  switchTitle: {
+    color: colors.label,
+    fontSize: 17,
+  },
+  switchSubtitle: {
+    color: colors.secondaryLabel,
+    fontSize: 13,
+    marginTop: 2,
+  },
+  summary: {
+    color: colors.label,
+    fontSize: 15,
+    fontWeight: '600',
+    marginTop: 20,
+    marginHorizontal: 32,
+  },
+  warning: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 20,
+    marginHorizontal: 32,
+  },
+  warningText: {
+    flex: 1,
+    color: colors.orange,
+    fontSize: 15,
+    fontWeight: '600',
   },
 });

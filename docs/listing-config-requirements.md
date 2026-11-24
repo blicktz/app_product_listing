@@ -7,7 +7,7 @@ Status: requirements for implementation in the listing-generation repo (`generic
 `generic_bulk.py` takes the item condition and the eBay store from two run-wide env vars:
 
 - `GENERIC_BULK_ITEM_CONDITION` (`new | pre-owned`)
-- `GENERIC_BULK_EBAY_STORE` (`foundandprofound | toptierpulls | fb-mkt`)
+- `GENERIC_BULK_EBAY_STORE` (`foundandprofound | toptierpulls | fb-mkt`), plus `GENERIC_BULK_FB_MKT=yes` for eBay + FB since 2026-11-23 (section 2.4)
 
 `fb-mkt` is Facebook Marketplace, added after the rest of this document was written. The capture app writes it under the same key, but it isn't an eBay store: the generator must accept it and must not try to upload those SKUs to eBay. Until then, its strict validation (L2) rejects any `listing.env` with this value.
 
@@ -48,6 +48,20 @@ Each `{sku}_{nn}.json` sidecar (see `post-processing-requirements.md` section 2.
 ```
 
 It's an additive field, so `schemaVersion` stays 1. It's useful as a cross-check, but `listing.env` is the source of truth. A SKU whose photos come from several sessions can have sidecars with older values.
+
+### 2.4 eBay store and FB Marketplace together (2026-11-23)
+
+A SKU can go to one eBay store **and** to Facebook Marketplace. The eBay stores stay mutually exclusive. The config screen has an **eBay store** radio list (`foundandprofound`, `toptierpulls`, `None (FB only)`) and a **Facebook Marketplace** switch. None with the switch off is invalid: the screen shows a warning and Start Capture stays disabled. Home and the camera show one chip per channel (for example `[foundandprofound] [FB]`).
+
+| Choice | `listing.env` | Photos/SKU |
+|---|---|---|
+| eBay only | `GENERIC_BULK_EBAY_STORE=<store>` | 24 |
+| eBay + FB | `GENERIC_BULK_EBAY_STORE=<store>` and `GENERIC_BULK_FB_MKT=yes` | 24 (FB uses the first 10) |
+| FB only | `GENERIC_BULK_EBAY_STORE=fb-mkt` | 10 |
+
+- The sidecar `listing` is now `{ itemCondition, ebayStore: <store> | null, fbMkt }`. Sidecars written before this date say `ebayStore: "fb-mkt"` for FB only.
+- A saved choice or queued upload from before the update with `ebayStore: "fb-mkt"` reads as FB only (`channelsOf` in `src/lib/listingConfig.ts`).
+- Server side: `generic-bulk-generate` does the eBay side and `fb-listings-generate` the FB side. See `ebay_seller_port/bulk_engine/docs/listing-config-requirements.md` section 2.5.
 
 ## 3. Requirements for the generator
 

@@ -6,6 +6,7 @@ import { getSnapshot as getPickSnapshot, type UploadDestination } from '../pick/
 import { logShootEvent } from '../shootLog/store';
 import { sleep } from '../sleep';
 import { sidecarFilename } from '../photoSidecar';
+import { listingEnvStore } from '../listingConfig';
 import {
   deleteJobDir,
   deleteJobPayload,
@@ -204,7 +205,8 @@ export function enqueue(job: UploadJob) {
     shot_started_at: shotTimes[0],
     shot_ended_at: shotTimes[shotTimes.length - 1],
     item_condition: job.listing?.itemCondition ?? null,
-    ebay_store: job.listing?.ebayStore ?? null,
+    // The listing.env store: 'fb-mkt' for FB only, as before.
+    ebay_store: job.listing ? listingEnvStore(job.listing) : null,
     destination: getPickSnapshot().uploadDestination,
     numbered_offline: job.numberedOffline,
   });

@@ -27,8 +27,8 @@ import { colors, shared, tints, type } from '@/lib/theme';
 import {
   CONDITION_COLORS,
   CONDITION_LABELS,
-  STORE_COLORS,
   completeListingConfig,
+  storeBadges,
   loadListingConfigDraft,
   type ListingConfig,
 } from '@/lib/listingConfig';
@@ -251,7 +251,8 @@ export default function ShootHomeScreen() {
         numberedOffline: check.offline ? '1' : '0',
         // Snapshot of what Home showed, so the session uploads exactly that.
         itemCondition: listingConfig.itemCondition,
-        ebayStore: listingConfig.ebayStore,
+        ebayStore: listingConfig.ebayStore ?? '',
+        fbMkt: listingConfig.fbMkt ? '1' : '0',
       },
     });
   };
@@ -410,10 +411,9 @@ export default function ShootHomeScreen() {
                     label={CONDITION_LABELS[listingConfig.itemCondition].toUpperCase()}
                     color={CONDITION_COLORS[listingConfig.itemCondition]}
                   />
-                  <ListingPill
-                    label={listingConfig.ebayStore}
-                    color={STORE_COLORS[listingConfig.ebayStore]}
-                  />
+                  {storeBadges(listingConfig).map((badge) => (
+                    <ListingPill key={badge.key} label={badge.label} color={badge.color} />
+                  ))}
                 </View>
               ) : (
                 <View style={styles.listingUnset}>

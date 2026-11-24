@@ -32,10 +32,10 @@ import { deleteJobDir, jobDir, newJobId, type UploadJob } from '@/lib/uploadQueu
 import {
   CONDITION_COLORS,
   CONDITION_LABELS,
-  STORE_COLORS,
   isEbayStore,
   isItemCondition,
-  MAX_PHOTOS_BY_STORE,
+  maxPhotos as maxPhotosFor,
+  storeBadges,
   type ListingConfig,
 } from '@/lib/listingConfig';
 
@@ -64,21 +64,25 @@ const DEFAULT_MAX_PHOTOS = 24;
 
 export default function CameraScreen() {
   const router = useRouter();
-  const { sku, dateRoot, startNumber, itemCondition, ebayStore, numberedOffline } =
+  const { sku, dateRoot, startNumber, itemCondition, ebayStore, fbMkt, numberedOffline } =
     useLocalSearchParams<{
       sku: string;
       dateRoot: string;
       startNumber: string;
       itemCondition: string;
-      ebayStore: string;
+      ebayStore: string; // '' = no eBay listing (FB only)
+      fbMkt: string; // '1' = also / only Facebook Marketplace
       numberedOffline?: string;
     }>();
-  // Snapshotted by Home at Start Capture, which refuses to start without both.
+  // Snapshotted by Home at Start Capture, which refuses to start with an
+  // incomplete config (no condition, or no eBay store and FB off).
+  const listingStore = isEbayStore(ebayStore) ? ebayStore : null;
+  const listingFb = fbMkt === '1';
   const listingConfig: ListingConfig | null =
-    isItemCondition(itemCondition) && isEbayStore(ebayStore)
-      ? { itemCondition, ebayStore }
+    isItemCondition(itemCondition) && (listingStore || listingFb)
+      ? { itemCondition, ebayStore: listingStore, fbMkt: listingFb }
       : null;
-  const maxPhotos = listingConfig ? MAX_PHOTOS_BY_STORE[listingConfig.ebayStore] : DEFAULT_MAX_PHOTOS;
+  const maxPhotos = listingConfig ? maxPhotosFor(listingConfig) : DEFAULT_MAX_PHOTOS;
   const insets = useSafeAreaInsets();
   const startingNumber = Number(startNumber) || 1;
   const existingCount = startingNumber - 1;
@@ -329,11 +333,9 @@ export default function CameraScreen() {
                 label={CONDITION_LABELS[listingConfig.itemCondition].toUpperCase()}
                 color={CONDITION_COLORS[listingConfig.itemCondition]}
               />
-              <ListingPill
-                size="small"
-                label={listingConfig.ebayStore}
-                color={STORE_COLORS[listingConfig.ebayStore]}
-              />
+              {storeBadges(listingConfig).map((badge) => (
+                <ListingPill key={badge.key} size="small" label={badge.label} color={badge.color} />
+              ))}
             </>
           )}
         </View>
