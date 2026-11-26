@@ -44,6 +44,9 @@ function packageStatus(p: PackageState): { icon: SFSymbol; color: typeof colors.
 function PackageRow({ pkg, onPress }: { pkg: PackageState; onPress: () => void }) {
   const status = packageStatus(pkg);
   const parts = [pkg.pkg.buyer, shortStore(pkg.pkg.store)];
+  if (pkg.insertCard) {
+    parts.push('✉ card');
+  }
   if (pkg.packedAt) {
     parts.push(formatTime(pkg.packedAt) + (pkg.manualPacked ? ' · by hand' : ''));
   } else if (pkg.labelScanned) {

@@ -49,6 +49,8 @@ export type PackageState = {
   noItems: boolean;
   cancelled: boolean;
   cancelledNames: string[];
+  /** Remind to put the thank-you card in (server's insert_card; never on a cancelled package). */
+  insertCard: boolean;
   packable: boolean;
   doneItems: number;
   totalItems: number;
@@ -164,6 +166,7 @@ function build(work: Work): PackageState {
     noItems: items.length === 0,
     cancelled,
     cancelledNames,
+    insertCard: !!pkg.insert_card && !cancelled,
     packable,
     doneItems: items.reduce((n, i) => n + Math.min(i.count, i.item.qty), 0),
     totalItems: items.reduce((n, i) => n + i.item.qty, 0),

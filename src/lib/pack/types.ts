@@ -12,6 +12,8 @@ export type PackOrder = {
   order_id: string;
   /** channel_name (Shopify #1013) or the order ID. */
   name: string;
+  /** Shopify sales channel handle (shop = Shop app, web); null for eBay and Whatnot. Added 2026-11-26. */
+  source?: string | null;
   cancelled: boolean;
   packed_at: string | null;
 };
@@ -65,6 +67,8 @@ export type PackPackage = {
   packed_source?: PackSource | null;
   /** The order has no items: it can only leave To pack through Mark packed. */
   item_count_zero?: boolean;
+  /** Put the P1 thank-you card (NEWFREESHIP code) in the box: a Shop app order. Added 2026-11-26. */
+  insert_card?: boolean;
 };
 
 export type PackLoad = {

@@ -128,8 +128,15 @@ function StatusPanel({ pkg }: { pkg: PackageState }) {
           {pkg.packedSource === 'desktop' ? ' on the desktop' : ''}
         </Text>
         <Text style={styles.panelSub}>
-          {pkg.manualPacked ? 'Marked by hand, not scan-verified.' : 'Label and every item scanned. Stick the label.'}
+          {pkg.manualPacked
+            ? 'Marked by hand, not scan-verified.'
+            : pkg.insertCard
+              ? 'Label and every item scanned.'
+              : 'Label and every item scanned. Stick the label.'}
         </Text>
+        {pkg.insertCard ? (
+          <Text style={[styles.panelSub, styles.cardCheck]}>✉ Thank-you card in? Then stick the label.</Text>
+        ) : null}
       </View>
     );
   }
@@ -163,6 +170,19 @@ function StatusPanel({ pkg }: { pkg: PackageState }) {
     );
   }
   return null;
+}
+
+/** Shop app orders get the P1 thank-you card. A reminder only: it doesn't gate packing. */
+function InsertCardPanel() {
+  return (
+    <View style={[shared.card, styles.insertCard, { backgroundColor: tints.purple }]}>
+      <Icon name="envelope.fill" color={colors.purple} size={28} />
+      <View style={styles.insertText}>
+        <Text style={[styles.scannerText, { color: colors.purple }]}>Add a thank-you card</Text>
+        <Text style={styles.panelSubLeft}>Shop app order — put one P1 card (NEWFREESHIP code) in the box.</Text>
+      </View>
+    </View>
+  );
 }
 
 export default function PackageScreen() {
@@ -293,6 +313,7 @@ export default function PackageScreen() {
         </Card>
 
         <StatusPanel pkg={pkg} />
+        {pkg.insertCard && !pkg.packedAt ? <InsertCardPanel /> : null}
         {canConfirm ? (
           <View style={[shared.card, styles.scanner, { backgroundColor: flash ? 'rgba(0,122,255,0.28)' : tints.blue }]}>
             <Icon name="barcode.viewfinder" color={colors.blue} size={28} />
@@ -394,6 +415,26 @@ const styles = StyleSheet.create({
     ...type.subheadline,
     color: colors.secondaryLabel,
     textAlign: 'center',
+  },
+  insertCard: {
+    marginTop: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+  },
+  insertText: {
+    flex: 1,
+    gap: 2,
+  },
+  panelSubLeft: {
+    ...type.subheadline,
+    color: colors.secondaryLabel,
+  },
+  cardCheck: {
+    color: colors.purple,
+    fontWeight: '600',
   },
   scanner: {
     marginTop: 12,
