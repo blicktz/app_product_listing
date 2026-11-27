@@ -1,7 +1,7 @@
 // make test (node --test): the thank-you card reminder follows the server's insert_card.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { deriveBoard } from './derive.ts';
+import { DEFAULT_INSERT_CARD_TEXT, deriveBoard } from './derive.ts';
 import type { PackPackage } from './types.ts';
 
 function pkg(key: string, extra: Partial<PackPackage> = {}, cancelled = false): PackPackage {
@@ -21,4 +21,15 @@ test('insertCard is set from insert_card, never on a cancelled package, and fals
   );
   const card = Object.fromEntries(board.packages.map((p) => [p.key, p.insertCard]));
   assert.deepEqual(card, { 'shopify:1': true, 'shopify:2': false, 'shopify:3': false, 'shopify:4': false });
+});
+
+test('insertCardText uses the server text, else the P1 text (older server)', () => {
+  const ebay = 'eBay order — put one E1 eBay card (coupon code) in the box.';
+  const board = deriveBoard(
+    [pkg('foundandprofound:1', { insert_card: true, insert_card_text: ebay, insert_card_label: 'E1 card' }),
+     pkg('shopify:2', { insert_card: true })],
+    [], null,
+  );
+  const text = Object.fromEntries(board.packages.map((p) => [p.key, [p.insertCardLabel, p.insertCardText]]));
+  assert.deepEqual(text, { 'foundandprofound:1': ['E1 card', ebay], 'shopify:2': ['card', DEFAULT_INSERT_CARD_TEXT] });
 });

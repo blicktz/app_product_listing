@@ -172,14 +172,14 @@ function StatusPanel({ pkg }: { pkg: PackageState }) {
   return null;
 }
 
-/** Shop app orders get the P1 thank-you card. A reminder only: it doesn't gate packing. */
-function InsertCardPanel() {
+/** Shop app orders get the P1 card, eBay orders the E1 card (the server decides). A reminder only: it doesn't gate packing. */
+function InsertCardPanel({ text }: { text: string }) {
   return (
     <View style={[shared.card, styles.insertCard, { backgroundColor: tints.purple }]}>
       <Icon name="envelope.fill" color={colors.purple} size={28} />
       <View style={styles.insertText}>
         <Text style={[styles.scannerText, { color: colors.purple }]}>Add a thank-you card</Text>
-        <Text style={styles.panelSubLeft}>Shop app order — put one P1 card (NEWFREESHIP code) in the box.</Text>
+        <Text style={styles.panelSubLeft}>{text}</Text>
       </View>
     </View>
   );
@@ -313,7 +313,7 @@ export default function PackageScreen() {
         </Card>
 
         <StatusPanel pkg={pkg} />
-        {pkg.insertCard && !pkg.packedAt ? <InsertCardPanel /> : null}
+        {pkg.insertCard && !pkg.packedAt ? <InsertCardPanel text={pkg.insertCardText} /> : null}
         {canConfirm ? (
           <View style={[shared.card, styles.scanner, { backgroundColor: flash ? 'rgba(0,122,255,0.28)' : tints.blue }]}>
             <Icon name="barcode.viewfinder" color={colors.blue} size={28} />

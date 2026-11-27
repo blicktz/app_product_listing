@@ -67,8 +67,12 @@ export type PackPackage = {
   packed_source?: PackSource | null;
   /** The order has no items: it can only leave To pack through Mark packed. */
   item_count_zero?: boolean;
-  /** Put the P1 thank-you card (NEWFREESHIP code) in the box: a Shop app order. Added 2026-11-26. */
+  /** Put an insert card in the box (P1 for Shop app orders; E1 for eBay orders once live). Added 2026-11-26. */
   insert_card?: boolean;
+  /** Which card: the packer's reminder line from the server (null when no card; missing on older servers). */
+  insert_card_text?: string | null;
+  /** Short card name for lists: "P1 card" / "E1 card" (null when no card; missing on older servers). */
+  insert_card_label?: string | null;
 };
 
 export type PackLoad = {

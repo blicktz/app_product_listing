@@ -1,5 +1,8 @@
 import type { LocalPackEvent, PackItem, PackOrder, PackPackage, PackScanKind, PackScanRow, PackSource } from './types';
 
+/** Reminder text when the server doesn't send insert_card_text (older fp_ops). */
+export const DEFAULT_INSERT_CARD_TEXT = 'Shop app order — put one P1 card (NEWFREESHIP code) in the box.';
+
 // Pure derivations: the packing board the screens show, computed from the last
 // GET /pack-state plus this phone's events the Mac hasn't counted yet.
 // A port of ops_console/packing.py (_fill, Package, _finish_if_done), so the
@@ -51,6 +54,10 @@ export type PackageState = {
   cancelledNames: string[];
   /** Remind to put the thank-you card in (server's insert_card; never on a cancelled package). */
   insertCard: boolean;
+  /** The server's reminder line for that card (falls back to the P1 text on older servers). */
+  insertCardText: string;
+  /** Short card name for the package list ("P1 card" / "E1 card"); "card" on older servers. */
+  insertCardLabel: string;
   packable: boolean;
   doneItems: number;
   totalItems: number;
@@ -167,6 +174,8 @@ function build(work: Work): PackageState {
     cancelled,
     cancelledNames,
     insertCard: !!pkg.insert_card && !cancelled,
+    insertCardText: pkg.insert_card_text || DEFAULT_INSERT_CARD_TEXT,
+    insertCardLabel: pkg.insert_card_label || 'card',
     packable,
     doneItems: items.reduce((n, i) => n + Math.min(i.count, i.item.qty), 0),
     totalItems: items.reduce((n, i) => n + i.item.qty, 0),

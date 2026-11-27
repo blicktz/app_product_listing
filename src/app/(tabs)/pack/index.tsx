@@ -45,7 +45,7 @@ function PackageRow({ pkg, onPress }: { pkg: PackageState; onPress: () => void }
   const status = packageStatus(pkg);
   const parts = [pkg.pkg.buyer, shortStore(pkg.pkg.store)];
   if (pkg.insertCard) {
-    parts.push('✉ card');
+    parts.push(`✉ ${pkg.insertCardLabel}`);
   }
   if (pkg.packedAt) {
     parts.push(formatTime(pkg.packedAt) + (pkg.manualPacked ? ' · by hand' : ''));
